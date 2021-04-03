@@ -7,7 +7,3 @@ Features included:
 - Making recommendations for user based on their preferences.
 - Filtering anime based on tags.
 - (Testing) Evaluation of recommendation algorithms.
-
-
-
-@authors: Tu Pham, Tahseen Rana, Raazia Hashim, Meet Patel.
