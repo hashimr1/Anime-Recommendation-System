@@ -6,5 +6,5 @@ main.py
 """
 
 
-if __name__ == '__man__':
-    pass
+if __name__ == '__main__':
+    print("Hello, I am main.")
