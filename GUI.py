@@ -20,7 +20,7 @@ class GUI:
     #   - _root:
     root = tk.Tk()
 
-    def register(self) -> None:
+    def display_register_window(self) -> None:
         """Register window to let users register"""
         register_root = tk.Toplevel(self.root)
         register_root.title('Register')
@@ -77,7 +77,7 @@ class GUI:
         register_button = tk.Button(register_root, text='Register', font=FONT)
         register_button.pack(pady=20)
 
-    def login(self) -> None:
+    def display_login_window(self) -> None:
         """Login window to let users login"""
 
         login_root = tk.Toplevel(self.root)
@@ -137,13 +137,14 @@ class GUI:
 
         login_frame = tk.Frame(self.root, bg=GRAY)
         login_frame.place(relx=0.88, rely=0.01, relheight=0.05, relwidth=0.05)
-        login_button = tk.Button(login_frame, text='Login', command=self.login, font=FONT)
+        login_button = tk.Button(login_frame, text='Login', command=self.display_login_window,
+                                 font=FONT)
         login_button.place(relheight=1.0, relwidth=1.0)
 
         register_frame = tk.Frame(self.root, bg=GRAY)
         register_frame.place(relx=0.94, rely=0.01, relheight=0.05, relwidth=0.05)
-        register_button = tk.Button(register_frame, text='Register', command=self.register,
-                                    font=FONT-10)
+        register_button = tk.Button(register_frame, text='Register',
+                                    command=self.display_register_window, font=FONT-10)
         register_button.place(relheight=1.0, relwidth=1.0)
 
         self.root.mainloop()
