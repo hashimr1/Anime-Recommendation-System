@@ -3,3 +3,6 @@ python-ta
 
 # Visualization
 plotly
+networkx
+numpy
+scipy
