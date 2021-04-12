@@ -6,3 +6,5 @@ plotly
 networkx
 numpy
 scipy
+Pillow
+requests
