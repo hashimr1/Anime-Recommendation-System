@@ -61,9 +61,46 @@ class User(Vertex):
                             f'of {type(self)} and {type(other)}')
         elif isinstance(other, User):
             return self.username == other.username
-
         else:
             return False
+
+    def most_similar_users(self, limit: int = 50) -> list[tuple[User, float]]:
+        """Returns a list tuples of most similar users, up to a limit, based on user reviews.
+        Each tuple takes the form (a, b), where a is the User object, and b is the similarity
+        score.
+        """
+        # Accumulator:
+        similarity_map = {}
+        for anime in self.neighbor_anime:
+            for other in anime.neighbor_users:
+                if other is not self:
+                    difference = abs(self.neighbor_anime[anime] - other.neighbor_anime[anime])
+                    value_to_add = 5.5 - difference  # Negative when difference > 5.5
+                    if other in similarity_map:
+                        similarity_map[other] += value_to_add
+                    else:
+                        similarity_map[other] = value_to_add
+        resulting_list = [(user, similarity_map[user]) for user in similarity_map if
+                          similarity_map[user] > 0]
+
+        if len(resulting_list) <= limit:
+            return resulting_list
+        else:
+            resulting_list.sort(key=lambda x: x[1], reverse=True)
+            return resulting_list[:limit]
+
+    def best_liked_genres(self, limit: int = 5) -> list[tuple[Genre, float]]:
+        """Returns a list tuples (a, b), where a is the genre the user like and b is the
+        liking score of the user toward that genre. The list contains the <limit> most liked
+        genres by the user.
+        """
+        liked_list = [(genre, self.neighbor_genres[genre]) for genre in self.neighbor_genres if
+                      self.neighbor_genres[genre] > 0]
+        if len(liked_list) <= limit:
+            return liked_list
+        else:
+            liked_list.sort(key=lambda x: x[1], reverse=True)
+            return liked_list[:limit]
 
 
 class Anime(Vertex):
@@ -74,7 +111,7 @@ class Anime(Vertex):
         - title: The title of the anime.
         - synopsis: A paragraph description of the anime.
         - total_episodes: The number of episodes of the anime.
-        - popularity: The ranking in popularity
+        - popularity: The ranking in popularity. The lower the number, the higher the rank.
         - rank: MyAnimeList ranking
         - score: MyAnimeList score
     """
@@ -162,15 +199,15 @@ class AnimeGraph:
         -
     """
 
-    _users: dict[str, User]
-    _genres: dict[str, Genre]
-    _anime: dict[int, Anime]
+    users: dict[str, User]
+    genres: dict[str, Genre]
+    anime: dict[int, Anime]
 
     def __init__(self) -> None:
         """Initialize an instance of the AnimeGraph class"""
-        self._users = {}
-        self._anime = {}
-        self._genres = {}
+        self.users = {}
+        self.anime = {}
+        self.genres = {}
 
     def add_anime(self, uid: int, title: str, synopsis: str,
                   total_episodes: int, popularity: Optional[int],
@@ -178,10 +215,10 @@ class AnimeGraph:
         """Add a new Anime to the graph.
         If the Anime is already in the graph, does nothing."""
 
-        if uid not in self._anime:
+        if uid not in self.anime:
             new_anime = Anime(uid, title, synopsis, total_episodes,
                               popularity, rank, score)
-            self._anime[uid] = new_anime
+            self.anime[uid] = new_anime
 
     def _add_genre(self, genre_name: str) -> None:
         """Add a new anime genre to the graph.
@@ -191,36 +228,48 @@ class AnimeGraph:
             - genre_name not in self._genres
         """
         new_genre = Genre(genre_name)
-        self._genres[genre_name] = new_genre
+        self.genres[genre_name] = new_genre
 
     def add_user(self, username: str, gender: Optional[str],
                  birth_year: Optional[int]) -> None:
         """Add a new user to the graph.
         If the user is already in the graph, does nothing. """
 
-        if username not in self._users:
+        if username not in self.users:
             new_user = User(username, gender, birth_year)
-            self._users[username] = new_user
+            self.users[username] = new_user
 
     def add_review(self, username: str, anime_uid: int, score: Union[int, float]) -> None:
-        """Add a review to the graph.
-        A review is a weighted edge between an anime and a user."""
+        """Add a review to the graph by establishing a weighted edge between
+        an anime and a user.
+        This function also establish weighted edges between the user and the related genres.
+        If there is already an edge between the user and the given genre, the weight will change
+        based on the score."""
 
-        if username in self._users and anime_uid in self._anime:
-            user = self._users[username]
-            anime = self._anime[anime_uid]
+        if username in self.users and anime_uid in self.anime:
+            user = self.users[username]
+            anime = self.anime[anime_uid]
 
             user.neighbor_anime[anime] = score
             anime.neighbor_users[user] = score
 
+            for genre in anime.neighbor_genres:
+                deviation = (score - 5.5)
+                if genre in user.neighbor_genres:
+                    user.neighbor_genres[genre] += deviation
+                    genre.neighbor_users[user] += deviation
+                else:
+                    user.neighbor_genres[genre] = deviation
+                    genre.neighbor_users[user] = deviation
+
     def add_anime_genre_edge(self, anime_uid: int, genre_name: str) -> None:
         """Add an anime-genre edge to the graph."""
-        if anime_uid in self._anime:
-            if genre_name not in self._genres:
+        if anime_uid in self.anime:
+            if genre_name not in self.genres:
                 self._add_genre(genre_name)
 
-            self._anime[anime_uid].neighbor_genres.add(self._genres[genre_name])
-            self._genres[genre_name].neighbor_anime.add(self._anime[anime_uid])
+            self.anime[anime_uid].neighbor_genres.add(self.genres[genre_name])
+            self.genres[genre_name].neighbor_anime.add(self.anime[anime_uid])
         else:
             raise ValueError
 
@@ -233,7 +282,7 @@ class AnimeGraph:
         Note that this method is provided for you, and you shouldn't change it.
         """
         graph_nx = nx.Graph()
-        for anime in self._anime.values():
+        for anime in self.anime.values():
             graph_nx.add_node(anime, kind='anime')
 
             for genre in anime.neighbor_genres:
