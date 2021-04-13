@@ -9,13 +9,15 @@ and its related function implementations.
 """
 from __future__ import annotations
 
-from typing import Union, Optional
+from typing import Union, Optional, Any
 import networkx as nx
 
 
 class Vertex:
     """Abstract class for a vertex in the graph"""
-
+    def adjacent(self, v: Vertex) -> bool:
+        """Returns whether v is adjacent to self"""
+        raise NotImplementedError
 
 class User(Vertex):
     """An user of the anime streaming service.
@@ -63,6 +65,10 @@ class User(Vertex):
             return self.username == other.username
         else:
             return False
+
+    def adjacent(self, v: Vertex) -> bool:
+        """Returns whether v is adjacent to self"""
+        return v in self.neighbor_genres or v in self.neighbor_anime
 
     def most_similar_users(self, limit: int = 50) -> list[tuple[User, float]]:
         """Returns a list tuples of most similar users, up to a limit, based on user reviews.
@@ -123,13 +129,14 @@ class Anime(Vertex):
     popularity: Optional[int]
     rank: Optional[int]
     score: Optional[float]
+    image_url: str
 
     neighbor_genres: set  # The set of Genres
     neighbor_users: dict[User, Union[float, int]]
 
     def __init__(self, uid: int, title: str, synopsis: str,
                  total_episodes: int, popularity: Optional[int],
-                 rank: Optional[int], score: Optional[int]) -> None:
+                 rank: Optional[int], score: Optional[int], image_url: str) -> None:
         """Initializer"""
         self.uid = uid
         self.title = title
@@ -138,6 +145,7 @@ class Anime(Vertex):
         self.rank = rank
         self.score = score
         self.synopsis = synopsis
+        self.image_url = image_url
         self.neighbor_genres = set()
         self.neighbor_users = {}
 
@@ -159,6 +167,10 @@ class Anime(Vertex):
 
         else:
             return False
+
+    def adjacent(self, v: Vertex) -> bool:
+        """Returns whether v is adjacent to self"""
+        return v in self.neighbor_genres or v in self.neighbor_users
 
 
 class Genre(Vertex):
@@ -191,6 +203,10 @@ class Genre(Vertex):
         else:
             return False
 
+    def adjacent(self, v: Vertex) -> bool:
+        """Returns whether v is adjacent to self"""
+        return v in self.neighbor_users or v in self.neighbor_anime
+
 
 class AnimeGraph:
     """A weighted graph, consisting of Anime, Users and Genres.
@@ -209,15 +225,23 @@ class AnimeGraph:
         self.anime = {}
         self.genres = {}
 
+    def __contains__(self, item: Any) -> bool:
+        """Return whether a vertex is in the graph."""
+        return item in self.anime or item in self.users or item in self.genres
+
+    def check_adjacent(self, v1: Vertex, v2: Vertex) -> bool:
+        """Returns whether two given vertices are adjacent."""
+        return v1.adjacent(v2)
+
     def add_anime(self, uid: int, title: str, synopsis: str,
                   total_episodes: int, popularity: Optional[int],
-                  rank: Optional[int], score: Optional[int]) -> None:
+                  rank: Optional[int], score: Optional[int], image_url: str) -> None:
         """Add a new Anime to the graph.
         If the Anime is already in the graph, does nothing."""
 
         if uid not in self.anime:
             new_anime = Anime(uid, title, synopsis, total_episodes,
-                              popularity, rank, score)
+                              popularity, rank, score, image_url)
             self.anime[uid] = new_anime
 
     def _add_genre(self, genre_name: str) -> None:
