@@ -257,6 +257,7 @@ class Application(tk.Tk):
         def _on_mouse_wheel(event) -> None:
             """The callback for the scrollbar."""
             self.content_canvas.yview_scroll(-1 * int((event.delta / 120)), "units")
+            self.update_idletasks()
 
         self.content_canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
 
@@ -496,7 +497,7 @@ class Application(tk.Tk):
         username = self.username_entry.get()
         if not str.isalnum(username):
             tk.messagebox.showerror("Invalid username.", "The username can only contain letters or"
-                                                         "numbers.")
+                                                         " numbers.")
         else:
             birthday = self.birth_month_var.get() + ' ' + self.birth_date_var.get() + ', ' + \
                        self.birth_year_var.get()
