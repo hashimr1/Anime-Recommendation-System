@@ -148,7 +148,10 @@ class Trie:
 
         start_node = self.find_node(prefix)
 
-        self._all_suffixes_(start_node, prefix, words_so_far)
+        if start_node.letter == '':
+            return words_so_far
+        else:
+            self._all_suffixes_(start_node, prefix, words_so_far)
 
         return words_so_far
 
