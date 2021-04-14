@@ -56,7 +56,7 @@ class Trie:
         The Trie is empty if and only if self.root.children == {}
 
         """
-        self.root = TrieNode('', True)
+        self.root = TrieNode('', False)
         for word in all_words:
             self.insert_word(word)
 
@@ -131,7 +131,7 @@ class Trie:
         """
         for child in node.children.values():
             if child.is_word:
-                words_so_far.append(path)
+                words_so_far.append(path + child.letter)
 
             self._collect_words(child, path + child.letter, words_so_far)
 
@@ -158,7 +158,7 @@ class Trie:
         """
         for child in node.children.values():
             if child.is_word:
-                words_so_far.append(prefix)
+                words_so_far.append(prefix + child.letter)
 
             self._all_suffixes_(child, prefix + child.letter, words_so_far)
 
