@@ -28,21 +28,23 @@ class RecommendationEngine:
         - anime_id_to_name: A mapping of anime ids to their name for name look up.
     """
     _graph: AnimeGraph
-    # _gui: GUI
-    current_user: Optional[User]
+    _current_user: Optional[User]
 
     def __init__(self, graph: AnimeGraph) -> None:
         """Initializing the Engine."""
         self._graph = graph
-        self.current_user = None
+        self._current_user = None
+        self._anime_name_map = {}
+        for anime in self._graph.anime.values():
+            self._anime_name_map[anime.title] = anime
 
     def log_in(self, username) -> bool:
         """Log a user into the system.
         Returns whether the log in is successful. It is unsuccessful when there is already
         an user logged in, or there is no user with the matching username.
         """
-        if self.current_user is None and username in self._graph.users:
-            self.current_user = self._graph.users[username]
+        if self._current_user is None and username in self._graph.users:
+            self._current_user = self._graph.users[username]
             return True
         else:
             return False
@@ -52,8 +54,8 @@ class RecommendationEngine:
         Returns whether the log out attempt is successful. When there is no user currently
         logged in, it returns False.
         """
-        if self.current_user is not None:
-            self.current_user = None
+        if self._current_user is not None:
+            self._current_user = None
             return True
         else:
             return False
@@ -77,23 +79,46 @@ class RecommendationEngine:
             self._graph.add_user(username, gender, int(date_birth[-4:]))
             return True
 
-    def add_review(self, username: str, anime_uid: int, review_score: float, filepath: str) -> None:
+    def add_review(self, anime_uid: int, review_score: float, reviews_filepath: str) -> None:
         """Add a review to the database and the graph.
             - username in self._graph
             - anime in self._graph
         """
+        if self._current_user is None:
+            return
         # String form of the score
         s = str(review_score)
         # For now we don't use the details of categorized score yet
         pseudo_details = {'Overall': s, 'Story': s, 'Animation': s, 'Sound': s,
                           'Character': s, 'Enjoyment': s}
-
-        new_row = [username, anime_uid, s, pseudo_details]
-        with open(filepath, 'a+', newline='') as fd:
+        # The '0' is a temporary review ID, we don't need it for now.
+        new_row = ['0', self._current_user.username, anime_uid, s, pseudo_details]
+        with open(reviews_filepath, 'a+', newline='') as fd:
             writer = csv.writer(fd)
             writer.writerow(new_row)
         # This will overwrite the current user-anime edge, if there is any.
-        self._graph.add_review(username, anime_uid, review_score)
+        self._graph.add_review(self._current_user.username, anime_uid, review_score)
+
+    def fetch_new_anime(self, limit=10) -> list[Anime]:
+        """Returns a list of newly released anime, up to a limit."""
+        return self._graph.fetch_new_anime(limit)
+
+    def fetch_anime_by_name(self, name: str) -> Optional[Anime]:
+        """Returns an anime in the system.
+        If there is none, returns None."""
+        return self._graph.fetch_anime_by_name(name)
+
+    def fetch_popular_anime(self, limit=10) -> list[Anime]:
+        """Returns a list of most popular anime, up to a limit"""
+        return self._graph.fetch_popular_anime(limit)
+
+    def fetch_popular_by_genre(self, genre: str, limit=10) -> list[Anime]:
+        """Returns a list of most popular anime of a given genre, up to a limit."""
+        return self._graph.fetch_popular_by_genre(genre, limit)
+
+    def fetch_all_genres(self) -> list[str]:
+        """Return the list of all anime genres, sorted in alphabetical order."""
+        return self._graph.fetch_all_genres()
 
     def recommend(self, limit: int = 10) -> list[Anime]:
         """Returns a list of anime for the currently logged in user, as suggestions.
@@ -101,18 +126,18 @@ class RecommendationEngine:
         Function Parameters:
             - limit: the maximum number of allowed
         Preconditions:
-            - self.current_user is not None
+            - self._current_user is not None
         """
-        exclusions = set(self.current_user.neighbor_anime.keys())
-        if len(self.current_user.neighbor_anime) == 0:
+        exclusions = set(self._current_user.neighbor_anime.keys())
+        if len(self._current_user.neighbor_anime) == 0:
             return []
-        elif len(self.current_user.neighbor_anime) < 3:
+        elif len(self._current_user.neighbor_anime) < 3:
             # Get the 5 most liked genres for content filtering
-            liked_genres = self.current_user.best_liked_genres(5)
+            liked_genres = self._current_user.best_liked_genres(5)
             return self._recommend_by_genres(liked_genres, limit, exclusions)
         else:
             # By default, get 50 most similar users.
-            similar_users = self.current_user.most_similar_users()
+            similar_users = self._current_user.most_similar_users()
             return self._recommend_by_users(similar_users, limit, exclusions)
 
     def _recommend_by_genres(self, genres: list[tuple[Genre, float]], limit: int = 10,

@@ -9,6 +9,7 @@ datafiles as described in the report.
 """
 import csv
 from anime_graph import AnimeGraph
+from datetime import datetime
 
 
 def create_anime_graph_from_data(anime_filepath: str, user_profile_filepath: str,
@@ -37,7 +38,7 @@ def _load_anime_data(graph: AnimeGraph, filepath: str) -> None:
         for row in reader:
             _convert_anime_row_data_types(row)
             # The data types of elements in row got converted to the correct type already.
-            graph.add_anime(uid=row[0], title=row[1], synopsis=row[2],
+            graph.add_anime(uid=row[0], title=row[1], synopsis=row[2], aired_date=row[4],
                             total_episodes=row[5], popularity=row[7],
                             rank=row[8], score=row[9], image_url=row[10])
             genres = row[3][2:-2].split('\', \'')
@@ -92,6 +93,7 @@ def _convert_anime_row_data_types(row: list) -> None:
         - row[0] is an int
         - row[1] is a str
         - row[2] is a str
+        - row[4] is a datetime object
         - row[5] is int
         - row[7] is either None or int
         - row[8] is either None or int
@@ -102,14 +104,33 @@ def _convert_anime_row_data_types(row: list) -> None:
         row[5] = 0
     else:
         row[5] = int(float(row[5]))
+
+    try:
+        row[4] = datetime.strptime(row[4][-12:].lstrip(), '%b %d, %Y')
+    except ValueError:
+        try:
+            row[4] = datetime.strptime(row[4][-9:], '%b, %Y')
+        except ValueError:
+            try:
+                row[4] = datetime.strptime(row[4][:12].rstrip(), '%b %d, %Y')
+            except ValueError:
+                try:
+                    row[4] = datetime.strptime(row[4][:4].rstrip(), '%Y')
+                except ValueError:
+                    # Meaning the anime airing date is not available.
+                    # Making 1900 the default year help sorting easier.
+                    row[4] = datetime(year=1900, month=1, day=1)
+
     if row[7] == '':
         row[7] = None
     else:
         row[7] = int(row[7])
+
     if row[8] == '':
         row[8] = None
     else:
         row[8] = int(float(row[8]))
+
     if row[9] == '':
         row[9] = None
     else:

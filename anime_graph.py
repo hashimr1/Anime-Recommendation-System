@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Union, Optional, Any
 import networkx as nx
+from datetime import datetime
 
 
 class Vertex:
@@ -18,6 +19,7 @@ class Vertex:
     def adjacent(self, v: Vertex) -> bool:
         """Returns whether v is adjacent to self"""
         raise NotImplementedError
+
 
 class User(Vertex):
     """An user of the anime streaming service.
@@ -125,6 +127,7 @@ class Anime(Vertex):
     uid: int
     title: str
     synopsis: str
+    aired_date: datetime
     total_episodes: int
     popularity: Optional[int]
     rank: Optional[int]
@@ -134,7 +137,7 @@ class Anime(Vertex):
     neighbor_genres: set  # The set of Genres
     neighbor_users: dict[User, Union[float, int]]
 
-    def __init__(self, uid: int, title: str, synopsis: str,
+    def __init__(self, uid: int, title: str, synopsis: str, aired_date: datetime,
                  total_episodes: int, popularity: Optional[int],
                  rank: Optional[int], score: Optional[int], image_url: str) -> None:
         """Initializer"""
@@ -145,6 +148,7 @@ class Anime(Vertex):
         self.rank = rank
         self.score = score
         self.synopsis = synopsis
+        self.aired_date = aired_date
         self.image_url = image_url
         self.neighbor_genres = set()
         self.neighbor_users = {}
@@ -218,12 +222,14 @@ class AnimeGraph:
     users: dict[str, User]
     genres: dict[str, Genre]
     anime: dict[int, Anime]
+    _anime_name_map: dict[str, Anime]
 
     def __init__(self) -> None:
         """Initialize an instance of the AnimeGraph class"""
         self.users = {}
         self.anime = {}
         self.genres = {}
+        self._anime_name_map = {}
 
     def __contains__(self, item: Any) -> bool:
         """Return whether a vertex is in the graph."""
@@ -233,16 +239,17 @@ class AnimeGraph:
         """Returns whether two given vertices are adjacent."""
         return v1.adjacent(v2)
 
-    def add_anime(self, uid: int, title: str, synopsis: str,
+    def add_anime(self, uid: int, title: str, synopsis: str, aired_date: datetime,
                   total_episodes: int, popularity: Optional[int],
                   rank: Optional[int], score: Optional[int], image_url: str) -> None:
         """Add a new Anime to the graph.
         If the Anime is already in the graph, does nothing."""
 
         if uid not in self.anime:
-            new_anime = Anime(uid, title, synopsis, total_episodes,
+            new_anime = Anime(uid, title, synopsis, aired_date, total_episodes,
                               popularity, rank, score, image_url)
             self.anime[uid] = new_anime
+            self._anime_name_map[title] = new_anime
 
     def _add_genre(self, genre_name: str) -> None:
         """Add a new anime genre to the graph.
@@ -278,7 +285,8 @@ class AnimeGraph:
             anime.neighbor_users[user] = score
 
             for genre in anime.neighbor_genres:
-                deviation = (score - 5.5)
+
+                deviation = score - 5.5
                 if genre in user.neighbor_genres:
                     user.neighbor_genres[genre] += deviation
                     genre.neighbor_users[user] += deviation
@@ -296,6 +304,36 @@ class AnimeGraph:
             self.genres[genre_name].neighbor_anime.add(self.anime[anime_uid])
         else:
             raise ValueError
+
+    def fetch_anime_by_name(self, name: str) -> Optional[Anime]:
+        """Returns an anime in the system.
+        If there is none, returns None."""
+        if name in self._anime_name_map:
+            return self._anime_name_map[name]
+        else:
+            return None
+
+    def fetch_new_anime(self, limit=10) -> list[Anime]:
+        """Returns a list of newly released anime, up to a limit."""
+        res = list(self.anime.values())
+        res.sort(key=lambda anime: anime.aired_date, reverse=True)
+        return res[:limit]
+
+    def fetch_popular_anime(self, limit=10) -> list[Anime]:
+        """Returns a list of most popular anime."""
+        res = list(self.anime.values())
+        res.sort(key=lambda anime: anime.popularity)
+        return res[:limit]
+
+    def fetch_popular_by_genre(self, genre: str, limit=10) -> list[Anime]:
+        """Returns a list of most popular anime of a given genre, up to a limit."""
+        res = list(self.genres[genre].neighbor_anime)
+        res.sort(key=lambda anime: anime.popularity)
+        return res[:limit]
+
+    def fetch_all_genres(self) -> list[str]:
+        """Return the list of all anime genres."""
+        return sorted(list(self.genres.keys()))
 
     def to_networkx(self, max_vertices: int = 10000) -> nx.Graph:
         """Convert this graph into a networkx Graph.
