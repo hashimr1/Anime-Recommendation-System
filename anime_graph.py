@@ -335,6 +335,10 @@ class AnimeGraph:
         """Return the list of all anime genres."""
         return sorted(list(self.genres.keys()))
 
+    def fetch_all_anime_names(self) -> list[str]:
+        """Return a list of all anime names."""
+        return list(self._anime_name_map.keys())
+
     def to_networkx(self, max_vertices: int = 10000) -> nx.Graph:
         """Convert this graph into a networkx Graph.
 

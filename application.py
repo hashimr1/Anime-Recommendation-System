@@ -16,7 +16,7 @@ from recommendation_engine import RecommendationEngine
 from data_loader import create_anime_graph_from_data
 from anime_graph import Anime
 import textwrap
-from timeit import default_timer as timer
+from trie_auto_complete import Trie
 ##########################################################################
 # ==========  The default dimensions of GUI components  ================ #
 ##########################################################################
@@ -26,10 +26,13 @@ HEIGHT = '768'
 WIDTH = '1360'
 WINDOW_DIM = WIDTH + 'x' + HEIGHT
 
-# The dimensions of the register window
-RW_HEIGHT = '600'
-RW_WIDTH = '600'
-RW_DIM = RW_WIDTH + 'x' + RW_HEIGHT
+# The dimensions of the settings window
+SETTINGS_HEIGHT = '180'
+SETTINGS_WIDTH = '240'
+SETTINGS_DIM = SETTINGS_WIDTH + 'x' + SETTINGS_HEIGHT
+
+# The limit of the numbers of anime get displayed on screen
+ANIME_DISPLAY_LIMIT = 50
 
 # Default margins for widgets near the window border.
 # This also applies to bottom and right symmetrically
@@ -71,6 +74,9 @@ class Application(tk.Tk):
     selected_review_score: tk.StringVar
     # String variable for the genre that we need to keep track of
     selected_genre: tk.StringVar
+    # To record the output mode of the program
+    output_mode: str
+    logged_in: bool
     # Widgets for the login window & register window
     # we need to define them here to get their values on button click.
     username_entry: ttk.Entry
@@ -80,7 +86,7 @@ class Application(tk.Tk):
     birth_year_var: tk.StringVar
 
     # Class instances for data processing
-    # trie: Trie
+    trie: Trie
     recommender: RecommendationEngine
 
     # The data file paths
@@ -101,17 +107,19 @@ class Application(tk.Tk):
         # Initializing the recommendation engine
         graph = create_anime_graph_from_data(self.anime_file, self.profiles_file,
                                              self.reviews_file)
+        self.trie = Trie(graph.fetch_all_anime_names())
         self.recommender = RecommendationEngine(graph)
 
         # Initializing the GUI
-        self.title('AnimeList')
-        self.geometry(WIDTH + 'x' + HEIGHT)
+        self.title('My Anime List')
+        self.geometry(WINDOW_DIM)
 
         # Setting the style
         self.style = ttk.Style(self)
-        self.tk.call('source', 'tk_theme/azure.tcl')
-        self.style.theme_use('azure')
-
+        self.tk.call('source', 'tk_theme/azure-dark.tcl')
+        self.style.theme_use('azure-dark')
+        self.output_mode = 'Complete'
+        self.logged_in = False
         # Load the background image for later use
         self.background_image = tk.PhotoImage(file='anime_wallpaper.png')
 
@@ -127,17 +135,15 @@ class Application(tk.Tk):
         is performed and the result is displayed on the canvas."""
         keyword = self.query.get()
         if last_keyword == keyword:
-            anime_names = ['Emiya-san Chi no Kyou no Gohan', 'Charlotte',
-                           'Break Blade 5: Shisen no Hate,Fifth Break Blade Movie.',
-                           'UG☆Ultimate Girls', 'Charlotte',
-                           'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte',
-                           'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte',
-                           'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte']
+            anime_names = self.trie.all_suffixes(keyword)
+            anime_names.sort(key=lambda word: word.lower())
             animes_so_far = []
             for name in anime_names:
                 anime = self.recommender.fetch_anime_by_name(name)
                 if anime is not None:
                     animes_so_far.append(anime)
+                    if len(animes_so_far) > ANIME_DISPLAY_LIMIT:
+                        break
 
             self._clear_frame(self.temp_content_frame)
             self._switch_canvas_display_to(self.temp_content_frame)
@@ -154,7 +160,7 @@ class Application(tk.Tk):
             self._switch_canvas_display_to(self.perm_content_frame)
             return
         else:
-            self.after(1500, self._search_after_timer, keyword)
+            self.after(1200, self._search_after_timer, keyword)
 
     def _filter_by_genre(self, *args) -> None:
         """Callback associated with the genre drop down.
@@ -162,21 +168,28 @@ class Application(tk.Tk):
         frame.
         """
         selected_genre = self.selected_genre.get()
+        if selected_genre == 'All Genres':
+            return
+
         self._clear_frame(self.temp_content_frame)
         self._switch_canvas_display_to(self.temp_content_frame)
 
-        ttk.Button(self.temp_content_frame,
-                   text='Back to Main Page',
-                   command=lambda: self._switch_canvas_display_to(
-                       self.perm_content_frame)).pack(anchor=tk.NW)
+        def _on_go_back() -> None:
+            """The callback for the 'back to main page' button.
+            Reset the genre dropdown and go back to main page.
+            """
+            self.selected_genre.set(value='All Genres')
+            self._switch_canvas_display_to(self.perm_content_frame)
+
+        ttk.Button(self.temp_content_frame, text='Back to Main Page',
+                   command=_on_go_back).pack(anchor=tk.NW)
 
         anime_list = self.recommender.fetch_popular_by_genre(selected_genre, 30)
         self._display_anime_list(self.temp_content_frame,
                                  "Most popular " + selected_genre + " anime:", anime_list)
 
     def _initialize_main_page(self) -> None:
-        """Initialize the components for GUI"""
-
+        """Initialize the components of the main page."""
         # Setting up the search bar
         self.query = tk.StringVar()
         self.query.trace_add('write', self._on_query)
@@ -192,9 +205,13 @@ class Application(tk.Tk):
         genre_dropdown = ttk.OptionMenu(self, self.selected_genre, 'All Genres', *all_genres)
         genre_dropdown.place(relx=0.725, rely=TOP_MARGIN)
         self.selected_genre.trace_add('write', self._filter_by_genre)
+
+        # Setting button in the corner
+        settings_button = ttk.Button(self, text='Settings', command=self._display_settings)
+        settings_button.place(relx=0.92, rely=TOP_MARGIN, anchor=tk.NE)
         # The logout button
         logout_button = ttk.Button(self, text='Logout', command=self._logout)
-        logout_button.place(relx=0.925, rely=TOP_MARGIN)
+        logout_button.place(relx=1.0 - LEFT_MARGIN, rely=TOP_MARGIN, anchor=tk.NE)
         # Creating the content to display to user
         self._generate_new_content()
 
@@ -278,30 +295,36 @@ class Application(tk.Tk):
         # Create a frame to contain the list
         list_frame = ttk.Frame(frame)
         list_frame.pack(fill=tk.X)
+        if self.output_mode == 'Complete':
+            # starts displaying the anime in the list
+            for i in range(len(anime_list)):
+                col = i % 7
+                row = i // 7
+                anime = anime_list[i]
+                anime_title = anime.title
+                if len(anime_title) > 24:
+                    anime_title = textwrap.fill(anime_title, 24)
 
-        # starts displaying the anime in the list
-        for i in range(len(anime_list)):
-            col = i % 7
-            row = i // 7
-            anime = anime_list[i]
-            anime_title = anime.title
-            if len(anime_title) > 24:
-                anime_title = textwrap.fill(anime_title, 24)
+                try:
+                    im = Image.open(requests.get(anime.image_url, stream=True).raw)
+                    im = im.resize((149, 233))
+                    cover_im = ImageTk.PhotoImage(im)
+                except UnidentifiedImageError:
+                    cover_im = ImageTk.PhotoImage(Image.open("image_loading_error.jpg"))
 
-            try:
-                im = Image.open(requests.get(anime.image_url, stream=True).raw)
-                im = im.resize((149, 233))
-                cover_im = ImageTk.PhotoImage(im)
-            except UnidentifiedImageError:
-                cover_im = ImageTk.PhotoImage(Image.open("image_loading_error.jpg"))
+                # Keep a reference to the image so it doesn't get destroyed after function return.
+                cover_list.append(cover_im)
 
-            # Keep a reference to the image so it doesn't get destroyed by the garbage collector.
-            cover_list.append(cover_im)
-
-            # Create a "button" that display the aime
-            button = ttk.Button(list_frame, text=anime_title, image=cover_im, compound='top',
-                                command=lambda anime=anime: self._display_anime_info(anime))
-            button.grid(row=row, column=col, padx=4, pady=4, sticky=tk.NSEW)
+                # Create a "button" that display the aime
+                button = ttk.Button(list_frame, text=anime_title, image=cover_im, compound='top',
+                                    command=lambda anime=anime: self._display_anime_info(anime))
+                button.grid(row=row, column=col, padx=6, pady=4, sticky=tk.NSEW)
+        else:
+            for anime in anime_list:
+                anime_title = anime.title
+                button = ttk.Button(list_frame, text=anime_title, width=60,
+                                    command=lambda anime=anime: self._display_anime_info(anime))
+                button.pack(pady=2, anchor=tk.NW)
 
     def _display_anime_info(self, anime: Anime) -> None:
         """Display the info page of an anime on the main content canvas.
@@ -336,11 +359,11 @@ class Application(tk.Tk):
         # The "Go back" button
         back = ttk.Button(image_button_frame, text='Go back',
                           command=lambda: self._switch_canvas_display_to(self.perm_content_frame))
-        back.pack(pady=60, anchor=tk.SW)
+        back.pack(pady=80, anchor=tk.SW)
 
         # The info frame on right side
         info_frame = ttk.Frame(self.temp_content_frame)
-        info_frame.pack(side=tk.LEFT, padx=10, pady=54, anchor=tk.NW)
+        info_frame.pack(side=tk.LEFT, padx=10, pady=4, anchor=tk.NW)
         # Anime name
         ttk.Label(info_frame, text="Title: " + anime.title).pack(pady=5, anchor=tk.NW)
         # Aired date
@@ -443,14 +466,18 @@ class Application(tk.Tk):
         background_label = tk.Label(self, image=self.background_image)
         background_label.place(x=0, y=0, relwidth=1, relheight=1)
 
+        # Setting button in the corner
+        settings_button = ttk.Button(self, text='Settings', command=self._display_settings)
+        settings_button.place(relx=1.0 - LEFT_MARGIN, rely=TOP_MARGIN, anchor=tk.NE)
+
         login_frame = ttk.Frame(self)
         login_frame.place(relx=0.5, rely=0.5, relwidth=0.16, relheight=0.36, anchor=tk.CENTER)
-
+        # Username
         username_label = ttk.Label(login_frame, text='Username:')
         username_label.pack(pady=10)
         self.username_entry = ttk.Entry(login_frame)
         self.username_entry.pack(pady=10)
-
+        # Password
         password_label = ttk.Label(login_frame, text='Password:')
         password_label.pack(pady=10)
         password_entry = ttk.Entry(login_frame)
@@ -466,6 +493,37 @@ class Application(tk.Tk):
                                      command=self._display_register_window)
         register_button.pack(side=tk.LEFT, padx=5)
 
+    def _display_settings(self) -> None:
+        """Display a setting window"""
+        win = tk.Toplevel(self)
+        win.wm_title("Settings")
+        win.geometry(SETTINGS_DIM)
+
+        setting_options = ttk.Frame(win)
+        setting_options.pack(pady=10)
+
+        selected_option = tk.StringVar()
+        mode_dropdown = ttk.OptionMenu(setting_options, selected_option,
+                                       'Output mode', 'Simplified', 'Complete')
+        mode_dropdown.pack(anchor=tk.CENTER, pady=10)
+
+        confirm_options = ttk.Frame(win)
+        confirm_options.pack(pady=40)
+
+        def on_confirm() -> None:
+            """Callback for the 'Apply' button."""
+            selected = selected_option.get()
+            if selected != 'Output mode' and selected != self.output_mode:
+                self.output_mode = selected_option.get()
+                if self.logged_in:
+                    self._generate_new_content()
+            win.destroy()
+
+        confirm_button = ttk.Button(confirm_options, text='Apply', command=on_confirm)
+        cancel_button = ttk.Button(confirm_options, text='Cancel', command=win.destroy)
+        confirm_button.pack(side=tk.LEFT, padx=10)
+        cancel_button.pack(side=tk.LEFT, padx=10)
+
     def _login(self) -> None:
         """This function is associated with the log in button in the login window.
         It attempts to log a user in the system.
@@ -476,6 +534,7 @@ class Application(tk.Tk):
             tk.messagebox.showerror("Login unsuccessful",
                                     "The username does not exist. Please try again.")
         else:
+            self.logged_in = True
             self._initialize_main_page()
 
     def _logout(self) -> None:
@@ -486,6 +545,7 @@ class Application(tk.Tk):
         if not self.recommender.log_out():
             tk.messagebox.showerror("Error", "No user is logging in.")
         else:
+            self.logged_in = False
             self._display_login_window()
 
     def _register_new_user(self) -> None:
