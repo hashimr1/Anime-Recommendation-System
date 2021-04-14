@@ -108,8 +108,6 @@ class Trie:
         TrieNode that contains the last letter in the Trie.
         Return the root if the word is not found in the Trie.
         """
-        curr_node = self.root
-
         for node in self.root.children:
             correct_word, leaf = self.root.children[node].find_node_from_str_index(word, 0)
             if leaf is not None:
@@ -145,6 +143,9 @@ class Trie:
         """
         correct_prefix, start_node = self.find_node(prefix)
         words_so_far = []
+
+        if start_node.is_word:
+            words_so_far.append(correct_prefix)
 
         if start_node is None:
             return words_so_far
