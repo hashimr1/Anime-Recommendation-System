@@ -10,19 +10,20 @@ using tkinter.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, UnidentifiedImageError
 import requests
 from recommendation_engine import RecommendationEngine
 from data_loader import create_anime_graph_from_data
 from anime_graph import Anime
-import threading
+import textwrap
+from timeit import default_timer as timer
 ##########################################################################
 # ==========  The default dimensions of GUI components  ================ #
 ##########################################################################
 
 # The dimensions of the main window
-HEIGHT = '720'
-WIDTH = '1280'
+HEIGHT = '768'
+WIDTH = '1360'
 WINDOW_DIM = WIDTH + 'x' + HEIGHT
 
 # The dimensions of the register window
@@ -46,6 +47,7 @@ ANI_FRAME_H = 0.3
 
 # Predefined colors
 FONT = 40
+TITLE_FONT = ("Courier", 18)
 GRAY = '#E3E2E2'
 RED = '#FF2D00'
 
@@ -57,12 +59,18 @@ class Application(tk.Tk):
     """A class representing the GUI."""
     # The GUI components necessary for input/output
     background_image: tk.PhotoImage
-    anime_covers: list[tk.PhotoImage]
-    content_frame: tk.Frame
-
+    perm_anime_covers: list[tk.PhotoImage]
+    temp_anime_covers: list[tk.PhotoImage]
+    content_canvas: tk.Canvas
+    perm_content_frame: tk.Frame
+    temp_content_frame: tk.Frame
+    perm_frame_id: int
+    temp_frame_id: int
     # String variable associated with the search bar
     query: tk.StringVar
-
+    selected_review_score: tk.StringVar
+    # String variable for the genre that we need to keep track of
+    selected_genre: tk.StringVar
     # Widgets for the login window & register window
     # we need to define them here to get their values on button click.
     username_entry: ttk.Entry
@@ -88,7 +96,8 @@ class Application(tk.Tk):
         self.anime_file = anime_filepath
         self.profiles_file = profiles_filepath
         self.reviews_file = reviews_filepath
-
+        self.perm_anime_covers = []
+        self.temp_anime_covers = []
         # Initializing the recommendation engine
         graph = create_anime_graph_from_data(self.anime_file, self.profiles_file,
                                              self.reviews_file)
@@ -111,41 +120,111 @@ class Application(tk.Tk):
         self._display_login_window()
         self.mainloop()
 
-    def search_for_anime(self, *args) -> None:
-        """Display a list of anime names that matches self.query, or partially match the text
-        in the search bar."""
-        keywords = self.query.get()
-        pass
+    def _search_after_timer(self, last_keyword: str) -> None:
+        """This function is intended to be executed after an user
+        type something on the search bar.
+        It checks to see whether the search query has stayed the same. If yes, a search
+        is performed and the result is displayed on the canvas."""
+        keyword = self.query.get()
+        if last_keyword == keyword:
+            anime_names = ['Emiya-san Chi no Kyou no Gohan', 'Charlotte',
+                           'Break Blade 5: Shisen no Hate,Fifth Break Blade Movie.',
+                           'UG☆Ultimate Girls', 'Charlotte',
+                           'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte',
+                           'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte',
+                           'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte', 'Charlotte']
+            animes_so_far = []
+            for name in anime_names:
+                anime = self.recommender.fetch_anime_by_name(name)
+                if anime is not None:
+                    animes_so_far.append(anime)
+
+            self._clear_frame(self.temp_content_frame)
+            self._switch_canvas_display_to(self.temp_content_frame)
+            self._display_anime_list(self.temp_content_frame, "Search results: ", animes_so_far)
+
+    def _on_query(self, *args) -> None:
+        """This is a callback associated with the search bar. It is called everytime something is
+        typed on the search bar.
+        It will set a timer, which activates _search_after_timer after sometimes.
+        """
+        keyword = self.query.get()
+        if keyword == '':
+            self._clear_frame(self.temp_content_frame)
+            self._switch_canvas_display_to(self.perm_content_frame)
+            return
+        else:
+            self.after(1500, self._search_after_timer, keyword)
+
+    def _filter_by_genre(self, *args) -> None:
+        """Callback associated with the genre drop down.
+        This function display a list of 30 most popular anime by genre on the temporary content
+        frame.
+        """
+        selected_genre = self.selected_genre.get()
+        self._clear_frame(self.temp_content_frame)
+        self._switch_canvas_display_to(self.temp_content_frame)
+
+        ttk.Button(self.temp_content_frame,
+                   text='Back to Main Page',
+                   command=lambda: self._switch_canvas_display_to(
+                       self.perm_content_frame)).pack(anchor=tk.NW)
+
+        anime_list = self.recommender.fetch_popular_by_genre(selected_genre, 30)
+        self._display_anime_list(self.temp_content_frame,
+                                 "Most popular " + selected_genre + " anime:", anime_list)
 
     def _initialize_main_page(self) -> None:
         """Initialize the components for GUI"""
-        # The background
-        background_label = tk.Label(self, image=self.background_image)
-        background_label.place(x=0, y=0, relwidth=1, relheight=1)
 
         # Setting up the search bar
         self.query = tk.StringVar()
-        self.query.trace_add('write', self.search_for_anime)
+        self.query.trace_add('write', self._on_query)
         search_bar = ttk.Entry(self, textvariable=self.query)
         search_bar.place(relx=LEFT_MARGIN, rely=TOP_MARGIN, relheight=0.04, relwidth=0.7)
 
         # Initializing the content frame
-        self.content_frame = self._initialize_content_box()
+        self._initialize_content_box()
 
         # The genre dropdown
-        displayed_word = tk.StringVar(self)
-        genre_dropdown = ttk.OptionMenu(self, displayed_word, 'Action', 'Adventure')
+        all_genres = self.recommender.fetch_all_genres()
+        self.selected_genre = tk.StringVar()
+        genre_dropdown = ttk.OptionMenu(self, self.selected_genre, 'All Genres', *all_genres)
         genre_dropdown.place(relx=0.725, rely=TOP_MARGIN)
-        displayed_word.set('Genre')
-
+        self.selected_genre.trace_add('write', self._filter_by_genre)
         # The logout button
         logout_button = ttk.Button(self, text='Logout', command=self._logout)
         logout_button.place(relx=0.925, rely=TOP_MARGIN)
+        # Creating the content to display to user
+        self._generate_new_content()
 
-    def _initialize_content_box(self) -> tk.Frame:
+    def _generate_new_content(self) -> None:
+        """Clear the content box, generate new recommendation, and display them."""
+        # Wipe out the old permanent content.
+        self._clear_frame(self.perm_content_frame)
+        self._switch_canvas_display_to(self.perm_content_frame)
+        # A text display to let the user know that the system is doing something
+        wait_label = ttk.Label(self.perm_content_frame, text="One moment...", font=TITLE_FONT)
+        wait_label.pack(anchor=tk.NW)
+        self.update_idletasks()
+
+        # Generating new recommendations
+        recommendations = self.recommender.recommend(limit=20)
+        if len(recommendations) > 0:
+            self._display_anime_list(self.perm_content_frame,
+                                     "Recommended for You:", recommendations)
+
+        newly_released = self.recommender.fetch_new_anime(limit=12)
+        self._display_anime_list(self.perm_content_frame,
+                                 "Newly Released Anime", newly_released)
+        most_popular = self.recommender.fetch_popular_anime(limit=12)
+        self._display_anime_list(self.perm_content_frame,
+                                 "Most Popular on MyAnimeList", most_popular)
+        wait_label.destroy()
+
+    def _initialize_content_box(self) -> None:
         """Initialize the box containing the main content that is to be shown to the user,
         including recommendations, search results...
-        This function returns the frame of the content box.
         """
         outer_frame = tk.Frame(self)
         outer_frame.place(relx=LEFT_MARGIN, rely=TOP_MARGIN + 0.06,
@@ -158,14 +237,22 @@ class Application(tk.Tk):
         vbar = ttk.Scrollbar(outer_frame, orient=tk.VERTICAL,
                              command=self.content_canvas.yview)
         vbar.pack(side=tk.RIGHT, fill=tk.Y)
-
         self.content_canvas.configure(yscrollcommand=vbar.set)
 
-        inner_frame = tk.Frame(self.content_canvas)
-        inner_frame.bind('<Configure>', lambda _: self.content_canvas.configure(
-                            scrollregion=self.content_canvas.bbox('all')))
+        # Set up the frames for displaying main content
+        self.perm_content_frame = ttk.Frame(self.content_canvas)
+        self.temp_content_frame = ttk.Frame(self.content_canvas)
+        self.perm_content_frame.bind('<Configure>', lambda _: self.content_canvas.configure(
+                                        scrollregion=self.content_canvas.bbox('all')))
 
-        self.content_canvas.create_window((0, 0), window=inner_frame, anchor=tk.NW)
+        # Also create a hidden window for the temporary content
+        self.temp_frame_id = self.content_canvas.create_window((0, 0), state='hidden',
+                                                               window=self.temp_content_frame,
+                                                               anchor=tk.NW)
+        # Creating a "window" which is represented by the frame inside the canvas.
+        self.perm_frame_id = self.content_canvas.create_window((0, 0),
+                                                               window=self.perm_content_frame,
+                                                               anchor=tk.NW)
 
         def _on_mouse_wheel(event) -> None:
             """The callback for the scrollbar."""
@@ -173,30 +260,111 @@ class Application(tk.Tk):
 
         self.content_canvas.bind_all("<MouseWheel>", _on_mouse_wheel)
 
-        return inner_frame
-
-    def display_anime_list(self, anime_list: list[Anime]) -> None:
-        """display a list of anime recommendations on the canvas.
+    def _display_anime_list(self, frame: tk.Frame, list_title: str,
+                            anime_list: list[Anime]) -> None:
+        """display a list of anime on the canvas.
         Preconditions:
-            - self.content_frame is initialized.
+            - self.perm_content_frame is initialized.
+            - frame is self._perm_content_frame or frame is self._temp_content_frame
         """
-        # Clearing the content frame.
-        self._clear_main_canvas()
-        self.content_canvas.update_idletasks()
+        # Choose which list of to keep a reference of the anime covers
+        cover_list = self.perm_anime_covers \
+            if frame is self.perm_content_frame else self.temp_anime_covers
+
+        # Make the title
+        title = ttk.Label(frame, font=TITLE_FONT, text=list_title)
+        title.pack(pady=10, anchor=tk.NW)
+        # Create a frame to contain the list
+        list_frame = ttk.Frame(frame)
+        list_frame.pack(fill=tk.X)
+
         # starts displaying the anime in the list
         for i in range(len(anime_list)):
-            col = i % 5
-            row = i // 5
+            col = i % 7
+            row = i // 7
             anime = anime_list[i]
-            im = Image.open(requests.get(anime.image_url,
-                                         stream=True).raw)
-            im = im.resize((224, 350), Image.ANTIALIAS)
-            self.anime_covers.append(ImageTk.PhotoImage(im))
+            anime_title = anime.title
+            if len(anime_title) > 24:
+                anime_title = textwrap.fill(anime_title, 24)
 
-            button = tk.Button(self.content_frame, text=anime.title,
-                               image=self.anime_covers[i],
-                               compound='top', width=226, height=380)
-            button.grid(row=row, column=col, padx=4, pady=4)
+            try:
+                im = Image.open(requests.get(anime.image_url, stream=True).raw)
+                im = im.resize((149, 233))
+                cover_im = ImageTk.PhotoImage(im)
+            except UnidentifiedImageError:
+                cover_im = ImageTk.PhotoImage(Image.open("image_loading_error.jpg"))
+
+            # Keep a reference to the image so it doesn't get destroyed by the garbage collector.
+            cover_list.append(cover_im)
+
+            # Create a "button" that display the aime
+            button = ttk.Button(list_frame, text=anime_title, image=cover_im, compound='top',
+                                command=lambda anime=anime: self._display_anime_info(anime))
+            button.grid(row=row, column=col, padx=4, pady=4, sticky=tk.NSEW)
+
+    def _display_anime_info(self, anime: Anime) -> None:
+        """Display the info page of an anime on the main content canvas.
+        """
+        self._clear_frame(self.temp_content_frame)
+        self._switch_canvas_display_to(self.temp_content_frame)
+        # Requesting anime cover image from the internet.
+        try:
+            im = Image.open(requests.get(anime.image_url, stream=True).raw)
+            cover_im = ImageTk.PhotoImage(im)
+        except UnidentifiedImageError:
+            cover_im = ImageTk.PhotoImage(Image.open("image_loading_error.jpg"))
+        # Keep a reference of the image so it doesn't get destroyed by the garbage collector.
+        self.temp_anime_covers.append(cover_im)
+
+        # A frame for the image and a few buttons on the left side
+        image_button_frame = ttk.Frame(self.temp_content_frame)
+        image_button_frame.pack(side=tk.LEFT)
+        # Display the cover image
+        ttk.Label(image_button_frame, image=cover_im).pack()
+
+        # the reviewing button and dropdown
+        ttk.Label(image_button_frame, text="Make a review: ").pack(pady=5)
+        review_frame = ttk.Frame(image_button_frame)
+        review_frame.pack(pady=5)
+        possible_scores = [str(i) for i in range(1, 11)]
+        self.selected_review_score = tk.StringVar()
+        ttk.OptionMenu(review_frame, self.selected_review_score,
+                       *possible_scores).pack(side=tk.LEFT, padx=4)
+        ttk.Button(review_frame, text='Submit Review',
+                   command=lambda: self._create_review(anime.uid)).pack(side=tk.LEFT, padx=10)
+        # The "Go back" button
+        back = ttk.Button(image_button_frame, text='Go back',
+                          command=lambda: self._switch_canvas_display_to(self.perm_content_frame))
+        back.pack(pady=60, anchor=tk.SW)
+
+        # The info frame on right side
+        info_frame = ttk.Frame(self.temp_content_frame)
+        info_frame.pack(side=tk.LEFT, padx=10, pady=54, anchor=tk.NW)
+        # Anime name
+        ttk.Label(info_frame, text="Title: " + anime.title).pack(pady=5, anchor=tk.NW)
+        # Aired date
+        if anime.aired_date.year == 1900:
+            aired_text = "Not Available."
+        else:
+            aired_text = anime.aired_date.strftime('%B %d, %Y')
+        ttk.Label(info_frame, text="Aired: " + aired_text).pack(pady=5, anchor=tk.NW)
+        # Number of episodes
+        ttk.Label(info_frame, text="Number of episodes: " +
+                                   str(anime.total_episodes)).pack(pady=5, anchor=tk.NW)
+        # Score
+        ttk.Label(info_frame, text="Score: " + str(anime.score)).pack(pady=5, anchor=tk.NW)
+        # Ranking in score
+        ttk.Label(info_frame, text="Score Ranking: #" + str(anime.rank)).pack(pady=5, anchor=tk.NW)
+        # Ranking in popularity
+        ttk.Label(info_frame, text="Popularity: #" + str(anime.popularity)).pack(pady=5,
+                                                                                 anchor=tk.NW)
+        # Genres
+        genre_list = [str(genre) for genre in anime.neighbor_genres]
+        genres = ', '.join(genre_list)
+        ttk.Label(info_frame, text='Genres: ' + genres).pack(pady=5, anchor=tk.NW)
+        # Synopsis
+        synopsis = textwrap.fill(anime.synopsis, 180)
+        ttk.Label(info_frame, text="Synopsis: " + synopsis).pack(pady=5, anchor=tk.NW)
 
     def _display_register_window(self) -> None:
         """Create a register window for registering."""
@@ -308,8 +476,6 @@ class Application(tk.Tk):
                                     "The username does not exist. Please try again.")
         else:
             self._initialize_main_page()
-            recommendations = self.recommender.recommend(limit=20)
-            self.display_anime_list(recommendations)
 
     def _logout(self) -> None:
         """This function is associated with the log out button.
@@ -345,12 +511,56 @@ class Application(tk.Tk):
                                         "The username already exists. "
                                         "You should try a different one.")
 
-    def _clear_main_canvas(self) -> None:
-        """Helper function. Clear the main canvas to display new
-        recommendations or search result."""
-        for widget in self.content_frame.winfo_children():
+    def _create_review(self, anime_uid: int) -> None:
+        """Add a new review to the system. This is a callback associated with the submit review
+        button.
+        Preconditions:
+            - An user is currently logged in.
+        """
+        self.recommender.add_review(anime_uid, float(self.selected_review_score.get()),
+                                    self.reviews_file)
+        result = tk.messagebox.askyesno("Successful",
+                                        "Successfully added a new review. "
+                                        "Do you want the system to generate new recommendations?")
+        if result is True:
+            self._switch_canvas_display_to(self.perm_content_frame)
+            self._generate_new_content()
+
+    def _clear_frame(self, frame: tk.Frame) -> None:
+        """Helper function. Clear the given frame. If that frame is one of the two main content
+        frames, clear the associated list of image references as well."""
+        if frame is self.perm_content_frame:
+            self.perm_anime_covers = []
+        elif frame is self.temp_content_frame:
+            self.temp_anime_covers = []
+
+        for widget in frame.winfo_children():
             widget.destroy()
-        self.anime_covers = []
+
+    def _switch_canvas_display_to(self, frame: tk.Frame) -> None:
+        """Switch the display of the canvas from the temporary content frame to the permanent
+        content frame or the vice versa.
+        Preconditions:
+            - frame is self.perm_content_frame or frame is self.temp_content_frame
+        """
+
+        # When the permanent content is being displayed
+        if self.content_canvas.itemcget(tagOrId=self.perm_frame_id, option='state') == 'normal':
+            if frame is self.perm_content_frame:
+                return
+            self.temp_content_frame.bind('<Configure>', lambda _: self.content_canvas.configure(
+                scrollregion=self.content_canvas.bbox('all')))
+            self.content_canvas.yview_moveto('0.0')
+            self.content_canvas.itemconfigure(self.perm_frame_id, state='hidden')
+            self.content_canvas.itemconfigure(self.temp_frame_id, state='normal')
+
+        else:  # When the permanent content is hidden
+            if frame is self.temp_content_frame:
+                return
+            self.perm_content_frame.bind('<Configure>', lambda _: self.content_canvas.configure(
+                scrollregion=self.content_canvas.bbox('all')))
+            self.content_canvas.itemconfigure(self.perm_frame_id, state='normal')
+            self.content_canvas.itemconfigure(self.temp_frame_id, state='hidden')
 
 
 if __name__ == '__main__':
