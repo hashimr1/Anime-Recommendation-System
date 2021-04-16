@@ -18,7 +18,7 @@ def present_evaluation_data(engine: RecommendationEngine) -> None:
     recommendation techniques on web browser."""
     #####################################################################################
     # The actual code to obtain the evaluation data of different recommendation methods.#
-    # Not recommended since it may takes about 8 minutes.                              #
+    # Not recommended since it may take about 8 minutes.                                #
     #####################################################################################
     # measures = [euclidean_distance, manhattan_distance, minkowski_distance,
     #             jaccard_distance, 'custom', 'graph-based jaccard distance']
@@ -26,17 +26,17 @@ def present_evaluation_data(engine: RecommendationEngine) -> None:
     # accuracies = [(datum[0], datum[1]) for datum in eval_data]
     # running_times = [(datum[0], datum[2]) for datum in eval_data]
 
-    accuracies = [('euclidean_distance', 108), ('manhattan_distance', 108),
-                  ('minkowski_distance', 108), ('jaccard_distance', 222), ('custom', 128),
-                  ('graph-based jaccard distance', 221), ('content-filtering by genre', 57),
+    accuracies = [('euclidean_distance', 97), ('manhattan_distance', 97),
+                  ('minkowski_distance', 97), ('jaccard_distance', 243), ('custom', 143),
+                  ('graph-based jaccard distance', 245), ('content-filtering by genre', 73),
                   ('always return most popular animes', 214)]
-    running_times = [('euclidean_distance', 110.4416215),
-                     ('manhattan_distance', 107.57365809999999),
-                     ('minkowski_distance', 252.26382970000003),
-                     ('jaccard_distance', 89.43147779999993), ('custom', 6.423852000000011),
-                     ('graph-based jaccard distance', 10.635962199999994),
-                     ('content-filtering by genre', 6.768208099999924),
-                     ('always return most popular animes', 1.519702299999949)]
+    running_times = [('euclidean_distance', 109.1411967), ('manhattan_distance', 111.5982133),
+                     ('minkowski_distance', 242.494143), ('jaccard_distance', 82.0985478),
+                     ('custom', 5.879013700000087),
+                     ('graph-based jaccard distance', 8.566181200000074),
+                     ('content-filtering by genre', 5.600600399999962),
+                     ('always return most popular animes', 1.2133598000000347)]
+
     present_evaluation_chart(accuracies, 'accuracy')
     present_evaluation_chart(running_times, 'running time')
 
