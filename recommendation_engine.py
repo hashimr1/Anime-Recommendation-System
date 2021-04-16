@@ -9,13 +9,15 @@ class and its related function implementations.
 """
 
 from __future__ import annotations
-from typing import Optional
-from anime_graph import AnimeGraph, Anime, Genre, User
-import graph_visualization
+from typing import Optional, Callable, Union
 import csv
 
+import graph_visualization
+from anime_graph import AnimeGraph, Anime, User
+from distance_measures import jaccard_distance
+
 # The lowest score that indicate a favorite anime.
-SCORE_FAVORITE = 8
+SCORE_FAVORITE = 9
 
 
 class RecommendationEngine:
@@ -28,37 +30,14 @@ class RecommendationEngine:
         - anime_id_to_name: A mapping of anime ids to their name for name look up.
     """
     _graph: AnimeGraph
-    _current_user: Optional[User]
 
     def __init__(self, graph: AnimeGraph) -> None:
         """Initializing the Engine."""
         self._graph = graph
-        self._current_user = None
-        self._anime_name_map = {}
-        for anime in self._graph.anime.values():
-            self._anime_name_map[anime.title] = anime
 
-    def log_in(self, username) -> bool:
-        """Log a user into the system.
-        Returns whether the log in is successful. It is unsuccessful when there is already
-        an user logged in, or there is no user with the matching username.
-        """
-        if self._current_user is None and username in self._graph.users:
-            self._current_user = self._graph.users[username]
-            return True
-        else:
-            return False
-
-    def log_out(self) -> bool:
-        """Log out for the user currently logging in.
-        Returns whether the log out attempt is successful. When there is no user currently
-        logged in, it returns False.
-        """
-        if self._current_user is not None:
-            self._current_user = None
-            return True
-        else:
-            return False
+    def check_user_exists(self, username: str) -> bool:
+        """Returns whether the username is in the system."""
+        return username in self._graph.users
 
     def register(self, username: str, gender: str, date_birth: str, filepath: str) -> bool:
         """Register for a new user. If the user is already in the system, return false.
@@ -79,27 +58,27 @@ class RecommendationEngine:
             self._graph.add_user(username, gender, int(date_birth[-4:]))
             return True
 
-    def add_review(self, anime_uid: int, review_score: float, reviews_filepath: str) -> None:
+    def add_review(self, username: str, anime_uid: int, review_score: float,
+                   reviews_filepath: str) -> None:
         """Add a review to the database and the graph.
+        Preconditions:
             - username in self._graph
             - anime in self._graph
         """
-        if self._current_user is None:
-            return
         # String form of the score
         s = str(review_score)
         # For now we don't use the details of categorized score yet
         pseudo_details = {'Overall': s, 'Story': s, 'Animation': s, 'Sound': s,
                           'Character': s, 'Enjoyment': s}
         # The '0' is a temporary review ID, we don't need it for now.
-        new_row = ['0', self._current_user.username, anime_uid, s, pseudo_details]
+        new_row = ['0', username, anime_uid, s, pseudo_details]
         with open(reviews_filepath, 'a+', newline='') as fd:
             writer = csv.writer(fd)
             writer.writerow(new_row)
         # This will overwrite the current user-anime edge, if there is any.
-        self._graph.add_review(self._current_user.username, anime_uid, review_score)
+        self._graph.add_review(username, anime_uid, review_score)
 
-    def fetch_new_anime(self, limit=10) -> list[Anime]:
+    def fetch_new_anime(self, limit: int = 10) -> list[Anime]:
         """Returns a list of newly released anime, up to a limit."""
         return self._graph.fetch_new_anime(limit)
 
@@ -108,11 +87,11 @@ class RecommendationEngine:
         If there is none, returns None."""
         return self._graph.fetch_anime_by_name(name)
 
-    def fetch_popular_anime(self, limit=10) -> list[Anime]:
+    def fetch_popular_anime(self, limit: int = 10) -> list[Anime]:
         """Returns a list of most popular anime, up to a limit"""
         return self._graph.fetch_popular_anime(limit)
 
-    def fetch_popular_by_genre(self, genre: str, limit=10) -> list[Anime]:
+    def fetch_popular_by_genre(self, genre: str, limit: int = 10) -> list[Anime]:
         """Returns a list of most popular anime of a given genre, up to a limit."""
         return self._graph.fetch_popular_by_genre(genre, limit)
 
@@ -120,39 +99,34 @@ class RecommendationEngine:
         """Return the list of all anime genres, sorted in alphabetical order."""
         return self._graph.fetch_all_genres()
 
-    def recommend(self, limit: int = 10) -> list[Anime]:
-        """Returns a list of anime for the currently logged in user, as suggestions.
+    def recommend(self, username: str, limit: int = 10) -> list[Anime]:
+        """Returns a list of anime for the given user, as suggestions.
         Returns an empty list if the user has not reviewed any anime.
         Function Parameters:
             - limit: the maximum number of allowed
-        Preconditions:
-            - self._current_user is not None
         """
-        exclusions = set(self._current_user.neighbor_anime.keys())
-        if len(self._current_user.neighbor_anime) == 0:
+        if len(self._graph.users[username].neighbor_anime) == 0:
             return []
-        elif len(self._current_user.neighbor_anime) < 3:
-            # Get the 5 most liked genres for content filtering
-            liked_genres = self._current_user.best_liked_genres(5)
-            return self._recommend_by_genres(liked_genres, limit, exclusions)
+        elif len(self._graph.users[username].neighbor_anime) < 3:
+            return self.recommend_by_genres(username, limit)
         else:
-            # By default, get 50 most similar users.
-            similar_users = self._current_user.most_similar_users()
-            return self._recommend_by_users(similar_users, limit, exclusions)
+            return self.recommend_by_users(username, limit)
 
-    def _recommend_by_genres(self, genres: list[tuple[Genre, float]], limit: int = 10,
-                             exclusions: set[Anime] = None) -> list[Anime]:
+    def recommend_by_genres(self, username: str, limit: int = 10) -> list[Anime]:
         """Returns a list of most matched anime in term of genres, up to a limit, sorted by match
         score and popularity, excluding the anime in the set exclusions."""
+        user = self._graph.users[username]
+        genres = user.best_liked_genres(5)
         matched_so_far = {}
         num_ani = len(self._graph.anime)
+        exclusions = set(user.neighbor_anime.keys())
         for tup in genres:
             for anime in tup[0].neighbor_anime:
                 if anime not in exclusions and anime.popularity is not None:
                     if anime in matched_so_far:
-                        matched_so_far[anime] += (num_ani - anime.popularity) * tup[1]
+                        matched_so_far[anime] += (num_ani - anime.popularity) / 10 * tup[1]
                     else:
-                        matched_so_far[anime] = (num_ani - anime.popularity) * tup[1]
+                        matched_so_far[anime] = (num_ani - anime.popularity) / 10 * tup[1]
         result_list = [(ani, matched_so_far[ani]) for ani in matched_so_far]
         result_list.sort(key=lambda x: x[1], reverse=True)
         if len(result_list) <= limit:
@@ -160,25 +134,68 @@ class RecommendationEngine:
         else:
             return [ele[0] for ele in result_list[:limit]]
 
-    def _recommend_by_users(self, similar_users: list[tuple[User, float]], limit: int = 10,
-                            exclusions: set[Anime] = None) -> list[Anime]:
+    def recommend_by_users(self, username: str, limit: int = 10,
+                           distant_measure: Union[Callable[[User, User], float], str] = 'custom') \
+            -> list[Anime]:
         """Returns a list of anime recommendations, up to a limit, based on similar users.
         """
-        recommended_so_far = {}
-        for tup in similar_users:
-            for anime in tup[0].neighbor_anime:
-                rating = tup[0].neighbor_anime[anime]
-                if anime not in exclusions and rating >= 8:
-                    if anime in recommended_so_far:
-                        recommended_so_far[anime] = max(recommended_so_far[anime], rating * tup[1])
-                    else:
-                        recommended_so_far[anime] = rating * tup[1]
-        result_list = [(ani, recommended_so_far[ani]) for ani in recommended_so_far]
-        result_list.sort(key=lambda x: x[1], reverse=True)
-        if len(result_list) <= limit:
-            return [ele[0] for ele in result_list]
+        user = self._graph.users[username]
+        # By default, get 100 most similar users.
+        exclusions = set(user.neighbor_anime.keys())
+        similar_users = self._graph.most_similar_users(user, distant_measure, limit=100)
+        recommended_so_far = set()
+        result_list = []
+        for user in similar_users:
+            for anime in user.neighbor_anime:
+                rating = user.neighbor_anime[anime]
+                if anime not in exclusions and rating >= SCORE_FAVORITE and \
+                        anime not in recommended_so_far:
+                    recommended_so_far.add(anime)
+                    # Adding like this keeps the most relevant recommendations to the start of the
+                    # list.
+                    result_list.append(anime)
+                    if len(result_list) >= limit:
+                        return result_list
+        return result_list
+
+    def recommend_by_score_prediction(self, username: str, limit: int = 10) -> list[Anime]:
+        """Returns a list of anime recommendations, up to a limit, based on score predictions
+        calculated from similar users."""
+        user = self._graph.users[username]
+        exclusions = set(user.neighbor_anime.keys())
+        scores_so_far = []
+        for anime in self._graph.anime.values():
+            if anime not in exclusions:
+                scores_so_far.append((anime, self.predict_review_score(user, anime)))
+        scores_so_far.sort(key=lambda x: x[1], reverse=True)
+        return [tup[0] for tup in scores_so_far[:limit]]
+
+    def predict_review_score(self, user: User, anime: Anime) -> float:
+        """Predict the score that the given user would give the given book.
+
+        Preconditions:
+            - user in self._graph.users
+            - book in self._graph.
+        """
+        if user.adjacent(anime):
+            return user.get_weight(anime)
+
+        # Accumulators
+        weighted_total_rating = 0.0
+        total_weight = 0.0
+        for other in anime.neighbor_users:
+            score = 1 - jaccard_distance(user, other)  # Is the Jaccard similarity
+            if score > 0.0:
+                weighted_total_rating += other.get_weight(anime) * score
+                total_weight += score
+
+        if total_weight > 0:
+            res = weighted_total_rating / total_weight
+            if res == 10.0:
+                print(anime)
+            return res
         else:
-            return [ele[0] for ele in result_list[:limit]]
+            return anime.score if anime.score is not None else 0
 
     def visualize_graph(self, max_vertices: int = 10000) -> None:
         """Visualize the graph using networkx and plotly.
@@ -186,14 +203,3 @@ class RecommendationEngine:
             - The graph has been loaded with the given data.
         """
         graph_visualization.visualize_graph(self._graph, max_vertices=max_vertices)
-
-
-if __name__ == '__main__':
-    import python_ta
-    python_ta.check_all(config={
-        'extra-imports': [],  # the names (strs) of imported modules
-        'allowed-io': [],  # the names (strs) of functions that call print/open/input
-        'max-line-length': 100,
-        'disable': ['E1136']
-    })
-    # engine = RecommendationEngine("Data/animes.csv", 'Data/profiles.csv', 'Data/reviews.csv')

@@ -158,3 +158,67 @@ def _convert_user_row_data_types(row: list) -> None:
         row[3] = []
     else:
         row[3] = [int(uid) for uid in fav_list]
+
+
+def user_test_data_extract(profiles_filepath: str, num_to_extract: int) -> None:
+    """Separate the profiles data into two new files. One contains some extracted user profiles
+    with a part of their liked anime. The other contains those profiles with the remaining
+    liked anime.
+    This functions is intended to be run on the original data test.
+    """
+    extracted_so_far = 0
+    with open(profiles_filepath) as fp_in, \
+            open('Data/profiles_removed.csv', 'w', newline='') as fp_out1, \
+            open('Data/profiles_extracted.csv', 'w', newline='') as fp_out2:
+        reader = csv.reader(fp_in)
+        writer1 = csv.writer(fp_out1, delimiter=",")
+        writer2 = csv.writer(fp_out2, delimiter=",")
+
+        for row in reader:
+            temp = row[3][2:-2].split('\', \'')
+            if len(temp) >= 9 and extracted_so_far < num_to_extract:
+                pivot_index = int(len(temp) * 1 / 3)
+                keep = temp[:pivot_index]
+                extract = temp[pivot_index:]
+                row[3] = str(keep)
+                writer1.writerow(row)
+                row[3] = str(extract)
+                writer2.writerow(row)
+                extracted_so_far += 1
+            else:
+                writer1.writerow(row)
+    remove_user_liked_reviews('Data/profiles_extracted.csv', 'Data/reviews.csv')
+
+
+def remove_user_liked_reviews(extracted_users_filepath: str, review_filepath: str) -> None:
+    """Opens the reviews file. Delete all the reviews about the user's liked anime."""
+    # A mapping of username to their list of liked anime
+    user_like_lists = {}
+
+    with open(extracted_users_filepath) as fp_in:
+        reader = csv.reader(fp_in)
+
+        for row in reader:
+            user_like_lists[row[0]] = row[3][2:-2].split('\', \'')
+
+    with open(review_filepath) as fp_in, open('removed_reviews.csv', 'w', newline='') as fp_out:
+        reader = csv.reader(fp_in)
+        writer = csv.writer(fp_out, delimiter=",")
+
+        for row in reader:
+            if row[1] not in user_like_lists or row[2] not in user_like_lists[row[1]]:
+                writer.writerow(row)
+
+
+# Functions to make the data cleaner
+def remove_repeated_profiles(profiles_filepath: str) -> None:
+    """Create a new profiles file with no repeated row"""
+    usernames = set()
+    with open(profiles_filepath) as fp_in, open('cleaned_profiles.csv', 'w', newline='') as fp_out:
+        reader = csv.reader(fp_in)
+        writer = csv.writer(fp_out, delimiter=",")
+
+        for row in reader:
+            if row[0] not in usernames:
+                usernames.add(row[0])
+                writer.writerow(row)

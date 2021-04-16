@@ -8,15 +8,18 @@ using tkinter.
 @authors: Tahseen Rana, Tu Pham
 """
 
+import textwrap
 import tkinter as tk
 from tkinter import ttk, messagebox
-from PIL import Image, ImageTk, UnidentifiedImageError
+from typing import Optional
 import requests
+from PIL import Image, ImageTk, UnidentifiedImageError
+
 from recommendation_engine import RecommendationEngine
 from data_loader import create_anime_graph_from_data
 from anime_graph import Anime
-import textwrap
 from trie_auto_complete import Trie
+
 ##########################################################################
 # ==========  The default dimensions of GUI components  ================ #
 ##########################################################################
@@ -59,7 +62,34 @@ RED = '#FF2D00'
 
 
 class Application(tk.Tk):
-    """A class representing the GUI."""
+    """The Main application.
+    Instance Attributes:
+        - background_image: a reference to the background image. We need to keep references to
+        tk Images so that the garbage collector doesn't destroy them.
+        - perm_anime_covers: a list of references to anime cover images that is being held
+        until the user log out.
+        - temp_anime_covers: a list of references to temporary anime cover images that is used
+        for search result, anime info pages.
+        - content_canvas: The Canvas object on which content like recommendation is draw on.
+        - perm_content_frame: The permanent content frame inside the content canvas. This act
+        as a "window"—a child object of the canvas, for drawing content on. We need it to
+        implement the scrollbar.
+        - temp_content_frame: Same as perm_content_frame. This frame is to display
+        temporary content.
+        - perm_frame_id: The representative id of the permanent frame associated with the
+        content canvas. We need this to tell the canvas which frame to show and which to hide.
+        - temp_frame_id: Similar to perm_frame_id.
+        - query: The StringVar associated with the search bar. We keep it as an instance attribute
+        to trace it.
+        - selected_genre: The StringVar associated with the genre dropdown. Purpose is similar
+        to query.
+        - output_mode: Current output mode of the application. (Simplified or Complete).
+        - current_user: The user currently logged in.
+        - trie: The trie for autocompletion feature.
+        - anime_file: path to the anime data file.
+        - profiles_file: path to the profiles file.
+        - reviews_file: path to the reviews file.
+    """
     # The GUI components necessary for input/output
     background_image: tk.PhotoImage
     perm_anime_covers: list[tk.PhotoImage]
@@ -69,27 +99,17 @@ class Application(tk.Tk):
     temp_content_frame: tk.Frame
     perm_frame_id: int
     temp_frame_id: int
-    # String variable associated with the search bar
-    query: tk.StringVar
-    selected_review_score: tk.StringVar
-    # String variable for the genre that we need to keep track of
-    selected_genre: tk.StringVar
-    # To record the output mode of the program
-    output_mode: str
-    logged_in: bool
-    # Widgets for the login window & register window
-    # we need to define them here to get their values on button click.
-    username_entry: ttk.Entry
-    gender_var: tk.StringVar
-    birth_date_var: tk.StringVar
-    birth_month_var: tk.StringVar
-    birth_year_var: tk.StringVar
 
-    # Class instances for data processing
+    query: tk.StringVar
+    selected_genre: tk.StringVar
+
+    style: ttk.Style
+    output_mode: str
+    current_user: Optional[str]
+
+    # Components for computations
     trie: Trie
     recommender: RecommendationEngine
-
-    # The data file paths
     anime_file: str
     profiles_file: str
     reviews_file: str
@@ -104,6 +124,7 @@ class Application(tk.Tk):
         self.reviews_file = reviews_filepath
         self.perm_anime_covers = []
         self.temp_anime_covers = []
+        self.current_user = None
         # Initializing the recommendation engine
         graph = create_anime_graph_from_data(self.anime_file, self.profiles_file,
                                              self.reviews_file)
@@ -119,7 +140,7 @@ class Application(tk.Tk):
         self.tk.call('source', 'tk_theme/azure-dark.tcl')
         self.style.theme_use('azure-dark')
         self.output_mode = 'Complete'
-        self.logged_in = False
+
         # Load the background image for later use
         self.background_image = tk.PhotoImage(file='anime_wallpaper.png')
 
@@ -149,7 +170,7 @@ class Application(tk.Tk):
             self._switch_canvas_display_to(self.temp_content_frame)
             self._display_anime_list(self.temp_content_frame, "Search results: ", animes_so_far)
 
-    def _on_query(self, *args) -> None:
+    def _on_query(self, *args) -> None:  # args is passed to the callback, but we don't use them
         """This is a callback associated with the search bar. It is called everytime something is
         typed on the search bar.
         It will set a timer, which activates _search_after_timer after sometimes.
@@ -226,7 +247,7 @@ class Application(tk.Tk):
         self.update_idletasks()
 
         # Generating new recommendations
-        recommendations = self.recommender.recommend(limit=20)
+        recommendations = self.recommender.recommend(self.current_user, limit=20)
         if len(recommendations) > 0:
             self._display_anime_list(self.perm_content_frame,
                                      "Recommended for You:", recommendations)
@@ -259,8 +280,9 @@ class Application(tk.Tk):
         # Set up the frames for displaying main content
         self.perm_content_frame = ttk.Frame(self.content_canvas)
         self.temp_content_frame = ttk.Frame(self.content_canvas)
-        self.perm_content_frame.bind('<Configure>', lambda _: self.content_canvas.configure(
-                                        scrollregion=self.content_canvas.bbox('all')))
+        self.perm_content_frame.bind('<Configure>',
+                                     lambda _: self.content_canvas.configure(
+                                         scrollregion=self.content_canvas.bbox('all')))
 
         # Also create a hidden window for the temporary content
         self.temp_frame_id = self.content_canvas.create_window((0, 0), state='hidden',
@@ -271,7 +293,7 @@ class Application(tk.Tk):
                                                                window=self.perm_content_frame,
                                                                anchor=tk.NW)
 
-        def _on_mouse_wheel(event) -> None:
+        def _on_mouse_wheel(event: tk.Event) -> None:
             """The callback for the scrollbar."""
             self.content_canvas.yview_scroll(-1 * int((event.delta / 120)), "units")
             self.update_idletasks()
@@ -351,11 +373,15 @@ class Application(tk.Tk):
         review_frame = ttk.Frame(image_button_frame)
         review_frame.pack(pady=5)
         possible_scores = [str(i) for i in range(1, 11)]
-        self.selected_review_score = tk.StringVar()
-        ttk.OptionMenu(review_frame, self.selected_review_score,
+        selected_review_score = tk.StringVar()
+        ttk.OptionMenu(review_frame, selected_review_score,
                        *possible_scores).pack(side=tk.LEFT, padx=4)
-        ttk.Button(review_frame, text='Submit Review',
-                   command=lambda: self._create_review(anime.uid)).pack(side=tk.LEFT, padx=10)
+        submit_button = ttk.Button(review_frame,
+                                   text='Submit Review',
+                                   command=lambda:
+                                   self._create_review(anime.uid,
+                                                       float(selected_review_score.get())))
+        submit_button.pack(side=tk.LEFT, padx=10)
         # The "Go back" button
         back = ttk.Button(image_button_frame, text='Go back',
                           command=lambda: self._switch_canvas_display_to(self.perm_content_frame))
@@ -373,8 +399,9 @@ class Application(tk.Tk):
             aired_text = anime.aired_date.strftime('%B %d, %Y')
         ttk.Label(info_frame, text="Aired: " + aired_text).pack(pady=5, anchor=tk.NW)
         # Number of episodes
-        ttk.Label(info_frame, text="Number of episodes: " +
-                                   str(anime.total_episodes)).pack(pady=5, anchor=tk.NW)
+        ttk.Label(info_frame,
+                  text="Number of episodes: " + str(anime.total_episodes)).pack(pady=5,
+                                                                                anchor=tk.NW)
         # Score
         ttk.Label(info_frame, text="Score: " + str(anime.score)).pack(pady=5, anchor=tk.NW)
         # Ranking in score
@@ -406,8 +433,8 @@ class Application(tk.Tk):
         # Username
         username_label = ttk.Label(register_frame, text='Username:')
         username_label.pack(pady=10)
-        self.username_entry = ttk.Entry(register_frame)
-        self.username_entry.pack(pady=10)
+        username_entry = ttk.Entry(register_frame)
+        username_entry.pack(pady=10)
 
         # password
         password_label = ttk.Label(register_frame, text='Password:')
@@ -420,8 +447,8 @@ class Application(tk.Tk):
         gender_frame.pack(pady=10)
         gender_label = ttk.Label(gender_frame, text='Gender:')
         gender_label.pack(side='left', padx=10)
-        self.gender_var = tk.StringVar()   # The variable for the option
-        gender_dropdown = ttk.OptionMenu(gender_frame, self.gender_var, 'Male', 'Female', 'Other')
+        gender_var = tk.StringVar()   # The variable for the option
+        gender_dropdown = ttk.OptionMenu(gender_frame, gender_var, 'Male', 'Female', 'Other')
         gender_dropdown.pack(side='left')
 
         # The date of birth section
@@ -430,22 +457,22 @@ class Application(tk.Tk):
         birth_label = ttk.Label(date_birth_frame, text='Date of Birth (month, day, year):')
         birth_label.pack(pady=10)
         # Month
-        self.birth_month_var = tk.StringVar()
+        birth_month_var = tk.StringVar()
         months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
                   'Sept', 'Oct', 'Nov', 'Dec']
-        month_dropdown = ttk.OptionMenu(date_birth_frame, self.birth_month_var, *months)
+        month_dropdown = ttk.OptionMenu(date_birth_frame, birth_month_var, *months)
         month_dropdown.pack(side=tk.LEFT)
 
         # Day
-        self.birth_date_var = tk.StringVar()
+        birth_date_var = tk.StringVar()
         day = [str(x) for x in range(1, 32)]
-        day_dropdown = ttk.OptionMenu(date_birth_frame, self.birth_date_var, *day)
+        day_dropdown = ttk.OptionMenu(date_birth_frame, birth_date_var, *day)
         day_dropdown.pack(side=tk.LEFT, padx=10)
 
         # Year
-        self.birth_year_var = tk.StringVar()
+        birth_year_var = tk.StringVar()
         year = [str(y) for y in range(2021, 1920, -1)]
-        year_dropdown = ttk.OptionMenu(date_birth_frame, self.birth_year_var, *year)
+        year_dropdown = ttk.OptionMenu(date_birth_frame, birth_year_var, *year)
         year_dropdown.pack(side=tk.RIGHT)
 
         # The buttons (back/register)
@@ -454,8 +481,14 @@ class Application(tk.Tk):
         back_button = ttk.Button(button_frame, text='Back',
                                  command=self._display_login_window)
         back_button.pack(side=tk.LEFT, padx=6)
+
+        def _on_register() -> None:
+            """The callback associated with the register button."""
+            self._register_new_user(username_entry.get(), birth_month_var,
+                                    birth_date_var, birth_year_var, gender_var)
+
         register_button = ttk.Button(button_frame, text='Register',
-                                     command=self._register_new_user)
+                                     command=_on_register)
         register_button.pack(side=tk.LEFT, padx=6)
 
     def _display_login_window(self) -> None:
@@ -475,8 +508,8 @@ class Application(tk.Tk):
         # Username
         username_label = ttk.Label(login_frame, text='Username:')
         username_label.pack(pady=10)
-        self.username_entry = ttk.Entry(login_frame)
-        self.username_entry.pack(pady=10)
+        username_entry = ttk.Entry(login_frame)
+        username_entry.pack(pady=10)
         # Password
         password_label = ttk.Label(login_frame, text='Password:')
         password_label.pack(pady=10)
@@ -486,7 +519,8 @@ class Application(tk.Tk):
         # Aligning the buttons
         button_frame = ttk.Frame(login_frame)
         button_frame.pack(pady=20, padx=10)
-        login_button = ttk.Button(button_frame, text='Login', command=self._login)
+        login_button = ttk.Button(button_frame, text='Login',
+                                  command=lambda: self._login(username_entry.get()))
         login_button.pack(side=tk.LEFT, padx=5)
 
         register_button = ttk.Button(button_frame, text='Register',
@@ -502,7 +536,7 @@ class Application(tk.Tk):
         setting_options = ttk.Frame(win)
         setting_options.pack(pady=10)
 
-        selected_option = tk.StringVar()
+        selected_option = tk.StringVar(setting_options)
         mode_dropdown = ttk.OptionMenu(setting_options, selected_option,
                                        'Output mode', 'Simplified', 'Complete')
         mode_dropdown.pack(anchor=tk.CENTER, pady=10)
@@ -513,9 +547,9 @@ class Application(tk.Tk):
         def on_confirm() -> None:
             """Callback for the 'Apply' button."""
             selected = selected_option.get()
-            if selected != 'Output mode' and selected != self.output_mode:
-                self.output_mode = selected_option.get()
-                if self.logged_in:
+            if selected not in {'Output mode', self.output_mode}:
+                self.output_mode = selected
+                if self.current_user is not None:
                     self._generate_new_content()
             win.destroy()
 
@@ -524,17 +558,16 @@ class Application(tk.Tk):
         confirm_button.pack(side=tk.LEFT, padx=10)
         cancel_button.pack(side=tk.LEFT, padx=10)
 
-    def _login(self) -> None:
+    def _login(self, username: str) -> None:
         """This function is associated with the log in button in the login window.
         It attempts to log a user in the system.
         If the attempt is unsuccessful, an error message box is displayed.
         """
-        username = self.username_entry.get()
-        if not self.recommender.log_in(username):
+        if not self.recommender.check_user_exists(username):
             tk.messagebox.showerror("Login unsuccessful",
                                     "The username does not exist. Please try again.")
         else:
-            self.logged_in = True
+            self.current_user = username
             self._initialize_main_page()
 
     def _logout(self) -> None:
@@ -542,26 +575,23 @@ class Application(tk.Tk):
         It attempts to log a user out of the system.
         If the attempt is unsuccessful, an error message box is displayed.
         """
-        if not self.recommender.log_out():
-            tk.messagebox.showerror("Error", "No user is logging in.")
-        else:
-            self.logged_in = False
-            self._display_login_window()
+        self.current_user = None
+        self._display_login_window()
 
-    def _register_new_user(self) -> None:
+    def _register_new_user(self, username: str, birth_month_var: tk.StringVar,
+                           birth_date_var: tk.StringVar, birth_year_var: tk.StringVar,
+                           gender_var: tk.StringVar) -> None:
         """This function is associated with the register button.
         It attempts to register for a new user.
         If the attempt is unsuccessful, an error message box is displayed.
         """
-
-        username = self.username_entry.get()
         if not str.isalnum(username):
             tk.messagebox.showerror("Invalid username.", "The username can only contain letters or"
                                                          " numbers.")
         else:
-            birthday = self.birth_month_var.get() + ' ' + self.birth_date_var.get() + ', ' + \
-                       self.birth_year_var.get()
-            gender = self.gender_var.get()
+            birthday = birth_month_var.get() + ' ' + birth_date_var.get() + ', ' + \
+                birth_year_var.get()
+            gender = gender_var.get()
             # When then registering is successful
             if self.recommender.register(username, gender, birthday, self.profiles_file):
                 tk.messagebox.showinfo(title="Successful", message="Successfully registered. "
@@ -572,13 +602,14 @@ class Application(tk.Tk):
                                         "The username already exists. "
                                         "You should try a different one.")
 
-    def _create_review(self, anime_uid: int) -> None:
+    def _create_review(self, anime_uid: int, review_score: float) -> None:
         """Add a new review to the system. This is a callback associated with the submit review
         button.
         Preconditions:
-            - An user is currently logged in.
+            - self.current_user is not None
         """
-        self.recommender.add_review(anime_uid, float(self.selected_review_score.get()),
+        self.recommender.add_review(self.current_user, anime_uid,
+                                    review_score,
                                     self.reviews_file)
         result = tk.messagebox.askyesno("Successful",
                                         "Successfully added a new review. "
@@ -622,10 +653,3 @@ class Application(tk.Tk):
                 scrollregion=self.content_canvas.bbox('all')))
             self.content_canvas.itemconfigure(self.perm_frame_id, state='normal')
             self.content_canvas.itemconfigure(self.temp_frame_id, state='hidden')
-
-
-if __name__ == '__main__':
-
-    app = Application('Data/animes.csv', 'Data/profiles.csv',
-                      'Data/reviews.csv')
-    app.run()

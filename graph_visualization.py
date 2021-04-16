@@ -22,10 +22,8 @@ This file is Copyright (c) 2021 David Liu and Isaac Waller.
 """
 import networkx as nx
 from plotly.graph_objs import Scatter, Figure
-import plotly.offline
-
 import anime_graph
-
+import plotly.express as px
 
 # Colours to use when visualizing different clusters.
 COLOUR_SCHEME = [
@@ -61,6 +59,7 @@ def visualize_graph(graph: anime_graph.AnimeGraph,
     x_values = [pos[k][0] for k in graph_nx.nodes]
     y_values = [pos[k][1] for k in graph_nx.nodes]
     labels = list(graph_nx.nodes)
+    sizes = [10 if graph_nx.nodes[k]['kind'] == 'genre' else 5 for k in graph_nx.nodes]
     kinds = [graph_nx.nodes[k]['kind'] for k in graph_nx.nodes]
 
     colours = [ANIME_COLOUR if kind == 'anime'
@@ -84,7 +83,7 @@ def visualize_graph(graph: anime_graph.AnimeGraph,
                      mode='markers',
                      name='nodes',
                      marker=dict(symbol='circle-dot',
-                                 size=5,
+                                 size=sizes,
                                  color=colours,
                                  line=dict(color=VERTEX_BORDER_COLOUR, width=0.5)
                                  ),
@@ -100,6 +99,28 @@ def visualize_graph(graph: anime_graph.AnimeGraph,
     fig.update_yaxes(showgrid=False, zeroline=False, visible=False)
 
     if output_file == '':
-        plotly.offline.plot(fig)
+        fig.show()
     else:
         fig.write_image(output_file)
+
+
+###############################################################################
+# ========================= Custom functions ================================ #
+###############################################################################
+def present_evaluation_chart(eval_data: list[tuple[str, float]], type_of_eval: str) -> None:
+    """Show a bar chart on browser, which illustrate the efficiency of recommendation methods.
+    Each tuple in the input list contains the name of the method of measuring the proximity
+    between users and the number of correct guesses it makes.
+    Preconditions:
+        - type_of_eval in {'accuracy', 'running time'}
+    """
+    title = "The Number of correct guesses for the favorite animes of 300 users, using" \
+            "different measures of User vertex proximity." if type_of_eval == 'accuracy' \
+        else "Running times for generating recommendations for 300 users, using different " \
+            "measures of User vertex proximity."
+    method_names = [tup[0] for tup in eval_data]
+    quantities = [tup[1] for tup in eval_data]
+    y_title = type_of_eval.capitalize()
+    data_map = {'Measure': method_names, y_title: quantities}
+    fig = px.bar(data_map, x='Measure', y=y_title, title=title)
+    fig.show()

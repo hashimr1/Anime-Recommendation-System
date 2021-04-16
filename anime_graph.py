@@ -9,15 +9,19 @@ and its related function implementations.
 """
 from __future__ import annotations
 
-from typing import Union, Optional, Any
-import networkx as nx
+from typing import Union, Optional, Any, Callable
 from datetime import datetime
+import networkx as nx
 
 
 class Vertex:
     """Abstract class for a vertex in the graph"""
     def adjacent(self, v: Vertex) -> bool:
         """Returns whether v is adjacent to self"""
+        raise NotImplementedError
+
+    def get_weight(self, v: Vertex) -> Union[int, float]:
+        """Returns the weight of the edge between self and v."""
         raise NotImplementedError
 
 
@@ -72,7 +76,16 @@ class User(Vertex):
         """Returns whether v is adjacent to self"""
         return v in self.neighbor_genres or v in self.neighbor_anime
 
-    def most_similar_users(self, limit: int = 50) -> list[tuple[User, float]]:
+    def get_weight(self, v: Vertex) -> Union[int, float]:
+        """Returns the weight of the edge between self and v."""
+        if isinstance(v, Anime) and v in self.neighbor_anime:
+            return self.neighbor_anime[v]
+        elif isinstance(v, Genre) and v in self.neighbor_genres:
+            return self.neighbor_genres[v]
+        else:
+            return 0
+
+    def most_similar_users(self, limit: int = 50) -> list[User]:
         """Returns a list tuples of most similar users, up to a limit, based on user reviews.
         Each tuple takes the form (a, b), where a is the User object, and b is the similarity
         score.
@@ -90,12 +103,46 @@ class User(Vertex):
                         similarity_map[other] = value_to_add
         resulting_list = [(user, similarity_map[user]) for user in similarity_map if
                           similarity_map[user] > 0]
+        resulting_list.sort(key=lambda x: x[1], reverse=True)
 
-        if len(resulting_list) <= limit:
-            return resulting_list
-        else:
-            resulting_list.sort(key=lambda x: x[1], reverse=True)
-            return resulting_list[:limit]
+        return [tup[0] for tup in resulting_list[:limit]]
+
+    def closest_jaccard_distance_users(self, limit: int = 50) -> list[User]:
+        """Returns a list tuples of most similar users, measured by the jaccard distance,
+        up to a limit, based on user reviews.
+        Each tuple takes the form (a, b), where a is the User object, and b is the similarity
+        score.
+        """
+        # Accumulator:
+        similarity_map = {}
+        for anime in self.neighbor_anime:
+            for other in anime.neighbor_users:
+                if other is not self and other in similarity_map:
+                    # [0] is strictly equal weight common anime count
+                    # [1] is common anime count
+                    similarity_map[other][0] += \
+                        int(self.neighbor_anime[anime] == other.neighbor_anime[anime])
+                    similarity_map[other][1] += 1
+                elif other is not self:
+                    similarity_map[other] = \
+                        [int(self.neighbor_anime[anime] == other.neighbor_anime[anime]), 1]
+        return self._generate_jaccard_sorted_list(similarity_map, limit)
+
+    def _generate_jaccard_sorted_list(self, similarity_map: dict, limit: int) -> list[User]:
+        """Returns a sorted list of users sorted by jaccard similarities, given the mapping of
+        users to their corresponding cardinalities of the intersection and the union of the sets
+        of neighbor animes.
+        """
+        resulting_list = []
+        for user in similarity_map:
+            total_neighbors = len(self.neighbor_anime) + len(user.neighbor_anime)
+            similarity = _jaccard_similarity(total_neighbors,
+                                             similarity_map[user][1],
+                                             similarity_map[user][0])
+            resulting_list.append((user, similarity))
+        resulting_list.sort(key=lambda x: x[1], reverse=True)
+
+        return [tup[0] for tup in resulting_list[:limit]]
 
     def best_liked_genres(self, limit: int = 5) -> list[tuple[Genre, float]]:
         """Returns a list tuples (a, b), where a is the genre the user like and b is the
@@ -176,6 +223,15 @@ class Anime(Vertex):
         """Returns whether v is adjacent to self"""
         return v in self.neighbor_genres or v in self.neighbor_users
 
+    def get_weight(self, v: Vertex) -> Union[int, float]:
+        """Returns the weight of the edge between self and v."""
+        if isinstance(v, User) and v in self.neighbor_users:
+            return self.neighbor_users[v]
+        elif isinstance(v, Genre) and v in self.neighbor_genres:
+            return 1.0
+        else:
+            return 0.0
+
 
 class Genre(Vertex):
     """A genre in the anime categorization system"""
@@ -211,6 +267,15 @@ class Genre(Vertex):
         """Returns whether v is adjacent to self"""
         return v in self.neighbor_users or v in self.neighbor_anime
 
+    def get_weight(self, v: Vertex) -> Union[int, float]:
+        """Returns the weight of the edge between self and v."""
+        if isinstance(v, User) and v in self.neighbor_users:
+            return self.neighbor_users[v]
+        elif isinstance(v, Anime) in self.neighbor_anime:
+            return 1.0
+        else:
+            return 0.0
+
 
 class AnimeGraph:
     """A weighted graph, consisting of Anime, Users and Genres.
@@ -234,10 +299,6 @@ class AnimeGraph:
     def __contains__(self, item: Any) -> bool:
         """Return whether a vertex is in the graph."""
         return item in self.anime or item in self.users or item in self.genres
-
-    def check_adjacent(self, v1: Vertex, v2: Vertex) -> bool:
-        """Returns whether two given vertices are adjacent."""
-        return v1.adjacent(v2)
 
     def add_anime(self, uid: int, title: str, synopsis: str, aired_date: datetime,
                   total_episodes: int, popularity: Optional[int],
@@ -305,6 +366,28 @@ class AnimeGraph:
         else:
             raise ValueError
 
+    def most_similar_users(self, user: User,
+                           distant_measure: Union[Callable[[User, User], float], str] = 'custom',
+                           limit: int = 50) -> list[User]:
+        """Return a list of users most similar to the given user.
+        Preconditions:
+            - user.username in self.users
+        """
+        compared_so_far = []
+        if distant_measure == 'custom':
+            # Using my self-invented measure of similarity
+            return user.most_similar_users(limit)
+        elif distant_measure == 'graph-based jaccard distance':
+            return user.closest_jaccard_distance_users(limit)
+
+        for other in self.users.values():
+            if other is not user:
+                compared_so_far.append((other, distant_measure(user, other)))
+        # The distant_measure is the opposite of similarity, so we don't have to reverse the
+        # sorting order.
+        compared_so_far.sort(key=lambda x: x[1])
+        return [tup[0] for tup in compared_so_far[:limit]]
+
     def fetch_anime_by_name(self, name: str) -> Optional[Anime]:
         """Returns an anime in the system.
         If there is none, returns None."""
@@ -313,19 +396,19 @@ class AnimeGraph:
         else:
             return None
 
-    def fetch_new_anime(self, limit=10) -> list[Anime]:
+    def fetch_new_anime(self, limit: int = 10) -> list[Anime]:
         """Returns a list of newly released anime, up to a limit."""
         res = list(self.anime.values())
         res.sort(key=lambda anime: anime.aired_date, reverse=True)
         return res[:limit]
 
-    def fetch_popular_anime(self, limit=10) -> list[Anime]:
+    def fetch_popular_anime(self, limit: int = 10) -> list[Anime]:
         """Returns a list of most popular anime."""
         res = list(self.anime.values())
         res.sort(key=lambda anime: anime.popularity)
         return res[:limit]
 
-    def fetch_popular_by_genre(self, genre: str, limit=10) -> list[Anime]:
+    def fetch_popular_by_genre(self, genre: str, limit: int = 10) -> list[Anime]:
         """Returns a list of most popular anime of a given genre, up to a limit."""
         res = list(self.genres[genre].neighbor_anime)
         res.sort(key=lambda anime: anime.popularity)
@@ -347,6 +430,8 @@ class AnimeGraph:
 
         Note that this method is provided for you, and you shouldn't change it.
         """
+        # An anime may has a very large number of linked users.
+        max_neighbor_users = 100
         graph_nx = nx.Graph()
         for anime in self.anime.values():
             graph_nx.add_node(anime, kind='anime')
@@ -357,15 +442,37 @@ class AnimeGraph:
 
                 if genre in graph_nx.nodes:
                     graph_nx.add_edge(anime, genre)
-
+            users_so_far = 0
             for user in anime.neighbor_users:
-                if graph_nx.number_of_nodes() < max_vertices:
+                if graph_nx.number_of_nodes() < max_vertices and users_so_far < max_neighbor_users:
                     graph_nx.add_node(user, kind='user')
-
+                    users_so_far += 1
                 if user in graph_nx.nodes:
                     graph_nx.add_edge(anime, user)
-
             if graph_nx.number_of_nodes() >= max_vertices:
                 break
 
         return graph_nx
+
+
+# HELPER FUNCTION
+def _jaccard_similarity(total: int, common_count: int, strict_common_count: int) -> float:
+    """Returns the jaccard similarity between two sets of vertices, given the common neighbor
+    count and the strictly equal edge weight common neighbor count.
+    total is the sum of the cardinalities of the two sets.
+    """
+    if common_count == 0:
+        return 0
+    else:
+        return strict_common_count / (total - common_count)
+
+
+if __name__ == '__main__':
+    import python_ta
+    python_ta.check_all(config={
+        'max-line-length': 120,
+        'disable': ['E1136'],
+        'extra-imports': ['datetime', 'networkx'],
+        'allowed-io': [],
+        'max-nested-blocks': 4
+    })

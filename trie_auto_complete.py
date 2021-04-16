@@ -8,7 +8,6 @@ datafiles as described in the report.
 """
 from __future__ import annotations
 from typing import Optional, List, Dict
-from data_loader import create_anime_graph_from_data
 
 
 class TrieNode:
@@ -144,7 +143,7 @@ class Trie:
         correct_prefix, start_node = self.find_node(prefix)
         words_so_far = []
 
-        if start_node.is_word:
+        if start_node is not None and start_node.is_word:
             words_so_far.append(correct_prefix)
 
         if start_node is None:
@@ -170,9 +169,3 @@ class Trie:
         all_words = self.all_suffixes(prefix)
 
         return max(all_words, key=len)
-
-
-if __name__ == '__main__':
-    graph = create_anime_graph_from_data('Data/animes.csv', 'Data/profiles.csv',
-                                         'Data/reviews.csv')
-    trie = Trie(graph.fetch_all_anime_names())
