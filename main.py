@@ -37,8 +37,6 @@ def present_evaluation_data(engine: RecommendationEngine) -> None:
                      ('graph-based jaccard distance', 10.635962199999994),
                      ('content-filtering by genre', 6.768208099999924),
                      ('always return most popular animes', 1.519702299999949)]
-    print(accuracies)
-    print(running_times)
     present_evaluation_chart(accuracies, 'accuracy')
     present_evaluation_chart(running_times, 'running time')
 
