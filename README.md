@@ -9,3 +9,5 @@ Features included:
 - Making recommendations for user based on their preferences.
 - Filtering anime based on tags.
 - (Testing) Evaluation of recommendation algorithms.
+
+![alt text](https://cdn.discordapp.com/attachments/420250155036704768/832133264369778688/unknown.png)
