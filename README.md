@@ -10,4 +10,9 @@ Features included:
 - Filtering anime based on tags.
 - (Testing) Evaluation of recommendation algorithms.
 
-![alt text](https://cdn.discordapp.com/attachments/420250155036704768/832133264369778688/unknown.png)
+
+A few screenshots:
+![alt text](https://discord.com/channels/544707779680665609/544707779680665612/841151664056303637)
+
+
+![alt text](https://discord.com/channels/544707779680665609/544707779680665612/841151806041620551)
