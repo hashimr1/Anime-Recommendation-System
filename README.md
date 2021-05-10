@@ -12,7 +12,7 @@ Features included:
 
 
 A few screenshots:
-![alt text](https://discord.com/channels/544707779680665609/544707779680665612/841151664056303637)
+![alt text](https://cdn.discordapp.com/attachments/544707779680665612/841151664019079168/unknown.png)
 
 
-![alt text](https://discord.com/channels/544707779680665609/544707779680665612/841151806041620551)
+![alt text](https://cdn.discordapp.com/attachments/544707779680665612/841151806083301376/unknown.png)
