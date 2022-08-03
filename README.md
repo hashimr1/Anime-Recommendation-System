@@ -22,8 +22,12 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-This is an implementation of the popular arcade game [Frogger](https://froggerclassic.appspot.com/). Without access to computers with MIPS processors, the game can be tested in a MIPS simulator MARS.
-The goal of the game is to get a frog from the bottom of the screen to one of the safe areas at the top.
+This Anime Recomendation System attemps to use graph theory to provide personalized anime recomendations to users. Datasets containing information of animes, reviews and user profiles were processed to create an instance of AnimeGraph, which has verticies of three kinds; Anime, User and Genre. Genres were connected to Animes in that category and Users were connected to Animes they reviewed with the associated score as the edge weight. Recomendations were made in the following manner:
+ - Newly registered users are shown the most most popular Animes as well as some new releases
+ - A user with one or two reviews/favorites is shown Animes based on content-filtering, that is showing Animes in the same genres that the user has enjoyed
+ - When a user reviews more than two Animes, we switch to a recomendations by similar users, which is calculated by measuring the proximity of the user in question with others, using different algorithms (Euclidean distance, Manhatten distance, Minkowski distance). 
+ 
+ Additionally, the accuracy of the recomendation algorithms was measured by removing a third of the dataset in the computation and making recomendations for these users.  
 
 ![screenshot](Images/mainpage.PNG)
 ![screenshot](Images/animepage.PNG)
@@ -50,13 +54,13 @@ For more information, references and analysis, see [Project Report.pdf](https://
 <!-- Features -->
 ## Features
 
-- [ ] 5 rows of obstacles
+- [ ] user registration and sign in
 - [ ] colision detection
-- [ ] display of number of lives
-- [ ] second level of difficulty after win
-- [ ] sound effects for moving, win, restart and colisions
-- [ ] death animation
-- [ ] game over/restart screen
+- [ ] detailed view of each anime
+- [ ] providing anime recomendations based on watch history and reviews
+- [ ] filtering anime based on tags and genres
+- [ ] autocomplete search bar
+- [ ] testing and evaluation of recomendation algorithms
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -70,17 +74,3 @@ For more information, references and analysis, see [Project Report.pdf](https://
  [CSC111 - Foundations of Computer Science II](https://artsci.calendar.utoronto.ca/course/csc111h1)
 
 <p align="right">(<a href="#top">back to top</a>)</p>
-
-
-
-# MyAnimeRecommendations
-This is an anime recommendation app built in python with a GUI and features normally found on anime streaming sites.
-
-Authors: Tu Pham, Tahseen Rana, Raazia Hashim, Meet Patel.
-
-Features included:
-- Searching for anime names, which is supported by autocompletion.
-- Registering as a new user.
-- Making recommendations for user based on their preferences.
-- Filtering anime based on tags.
-- (Testing) Evaluation of recommendation algorithms.
