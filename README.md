@@ -55,7 +55,6 @@ For more information, references and analysis, see [Project Report.pdf](https://
 ## Features
 
 - [ ] user registration and sign in
-- [ ] colision detection
 - [ ] detailed view of each anime
 - [ ] providing anime recomendations based on watch history and reviews
 - [ ] filtering anime based on tags and genres
